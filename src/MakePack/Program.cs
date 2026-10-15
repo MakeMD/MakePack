@@ -72,6 +72,9 @@ static class Program
         try { _ui.BeginInvoke(() => Dispatch(args)); } catch { /* shutting down */ }
     }
 
+    /// <summary>The main window's way into the verbs (x with its queue, a with its dialog): same as a forwarded call.</summary>
+    internal static void Run(string[] args) => Dispatch(args);
+
     static void Dispatch(string[] args)
     {
         if (args.Length > 1 && args[0] == "x") Enqueue(args);
@@ -1442,6 +1445,86 @@ static class Program
                 Must(Engine.ExitCodeOf(new OperationCanceledException()) == 255 && Engine.ExitCodeOf(new InvalidOperationException(S.NoInputs)) == 10
                      && Engine.ExitCodeOf(new IOException("disk full")) == 2, "ExitCodeOf");
                 Console.WriteLine("OK cli (a switches, volumes, masks, refused password, env password, t/l/x codes 0 1 2 3 7 10 11)");
+            });
+
+            Check("packed", () =>
+            {
+                // Engine.PackedSizes reaches into SevenZipSharp: an access violation there would kill the process,
+                // so every kind, encrypted too, many times over; and the file must not stay locked afterwards.
+                foreach (var (kind, pass) in new[] { (ArchiveKind.SevenZip, (string?)null), (ArchiveKind.Zip, null), (ArchiveKind.TarGz, null), (ArchiveKind.SevenZip, "pw") })
+                {
+                    var arc = Path.Combine(root, $"packed-{kind}-{pass}{Engine.Kind(kind).Ext}");
+                    Pack([src], arc, kind, pass, pass != null);
+                    for (var i = 0; i < 20; i++)
+                    {
+                        using var a = Engine.Open(arc, pass);
+                        var sizes = Engine.PackedSizes(a);
+                        Must(sizes != null && sizes.Length == a.X.ArchiveFileData.Count, $"{kind}: no packed sizes");
+                        Must(sizes!.Sum() > 0 && sizes!.Sum() <= new FileInfo(arc).Length, $"{kind}: packed total {sizes!.Sum()} of {new FileInfo(arc).Length}");
+                    }
+                    File.Move(arc, arc + ".moved");   // throws if a handle was left open
+                    File.Move(arc + ".moved", arc);
+                }
+                Console.WriteLine("OK packed (7z, zip, tar.gz, encrypted 7z; repeated; no lock left)");
+            });
+
+            Check("gui", () =>
+            {
+                // The main window, never shown: disk and archive listings, "..", history, nested archives, flat view.
+                var gui = Path.Combine(root, "gui");
+                Directory.CreateDirectory(Path.Combine(gui, "alpha"));
+                Directory.CreateDirectory(Path.Combine(gui, "beta", "inner"));
+                Pack([src], Path.Combine(gui, "pack.zip"), ArchiveKind.Zip, null, false);
+                var inner = Path.Combine(root, "inner.zip");
+                Pack([Path.Combine(src, "a.txt")], inner, ArchiveKind.Zip, null, false);
+                Pack([inner], Path.Combine(gui, "outer.7z"), ArchiveKind.SevenZip, null, false);
+                var real = Environment.GetEnvironmentVariable("MAKEPACK_SETTINGS");
+                Environment.SetEnvironmentVariable("MAKEPACK_SETTINGS", Path.Combine(root, "gui-settings.json"));   // not the user's
+                Settings.Reload();
+                try
+                {
+                    using var f = new MainForm(gui);
+                    // Progress windows center on it: keep them off the user's work (monitor 1 when there is one).
+                    var screen = Screen.AllScreens.FirstOrDefault(s => s.DeviceName.EndsWith("DISPLAY1")) ?? Screen.PrimaryScreen!;
+                    f.StartPosition = FormStartPosition.Manual;
+                    f.Location = screen.WorkingArea.Location;
+                    string Names() => string.Join("|", f.Names);
+                    Must(Names() == "..|alpha|beta|outer.7z|pack.zip", "disk list: " + Names());
+                    f.Open("pack.zip");
+                    Must(Names() == "..|src", "archive root: " + Names());
+                    var total = Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories).Sum(p => new FileInfo(p).Length);
+                    Must(f.CellOf("src", 1) == total.ToString("#,0"), $"folder size {f.CellOf("src", 1)}, files {total}");
+                    Must(f.CellOf("src", 2).Length > 0, "the Packed column is empty (Engine.PackedSizes)");
+                    Must(f.StatusText.Contains(S.FoldersN(1)) && f.StatusText.Contains(S.Bytes(total)), "status: " + f.StatusText);
+                    Must(f.AddressText.Contains("pack.zip") && f.AddressText.Contains("ZIP"), "address: " + f.AddressText);
+                    f.Open("src");
+                    Must(f.Names.Contains("sub") && f.Names.Contains("a.txt") && f.Names.Contains("void"), "inside src: " + Names());
+                    f.Up();
+                    Must(Names() == "..|src" && f.Chosen == "src", $"up inside the archive: {Names()} chosen {f.Chosen}");
+                    f.Up();
+                    Must(f.Names.Contains("alpha") && f.Chosen == "pack.zip", "up out of the archive: " + f.Chosen);
+                    f.Back();
+                    Must(Names() == "..|src", "back into the archive: " + Names());
+                    f.Forward();
+                    Must(f.Names.Contains("alpha"), "forward to the folder: " + Names());
+                    f.Open("outer.7z");
+                    f.Open("inner.zip");
+                    Must(Names() == "..|a.txt", "nested archive: " + Names());
+                    f.Up();
+                    Must(f.Chosen == "inner.zip" && f.AddressText.Contains("outer.7z"), "up from a nested archive: " + f.AddressText);
+                    f.Up();
+                    Must(f.Chosen == "outer.7z" && f.Names.Contains("alpha"), "up from the outer archive");
+                    f.Open("pack.zip");
+                    f.ToggleFlat();
+                    Must(f.Names.Contains("b.bin") && f.Names.Contains("тест ïé.txt") && !f.Names.Contains("src"), "flat view: " + Names());
+                    f.ToggleFlat();
+                    Must(Names() == "..|src", "flat view off: " + Names());
+                }
+                finally { Environment.SetEnvironmentVariable("MAKEPACK_SETTINGS", real); Settings.Reload(); }
+                if (S.FilesN(1).EndsWith("файл"))   // Ukrainian plurals, as status line says them
+                    foreach (var (n, w) in new[] { (1, "файл"), (2, "файли"), (5, "файлів"), (11, "файлів"), (12, "файлів"), (21, "файл"), (22, "файли"), (111, "файлів") })
+                        Must(S.FilesN(n).EndsWith(" " + w), $"{n} -> {S.FilesN(n)}");
+                Console.WriteLine("OK gui (disk, archive, folder sizes, packed, status, up/back/forward, nested, flat, plurals)");
             });
         }
         catch (Exception ex) { Console.WriteLine($"FAIL setup: {ex}"); fails++; }

@@ -38,6 +38,17 @@ sealed class Settings
     /// <summary>Where new archives go. null = next to the files being packed.</summary>
     public string? ArchiveFolder { get; set; }
 
+    /// <summary>The main window: where it was, how the list looked, which folder it showed last.</summary>
+    public int[]? Window { get; set; }     // x, y, width, height (Rectangle does not round-trip through JSON)
+    public bool Maximized { get; set; }
+    public bool Tree { get; set; }
+    public bool ListMode { get; set; }
+    public bool FlatView { get; set; }
+    public string? LastFolder { get; set; }
+
+    /// <summary>Favorites menu, in menu order; the first ten answer Ctrl+1...0.</summary>
+    public List<Favorite> Favorites { get; set; } = [];
+
     /// <summary>Named option sets for the New archive dialog and `a --profile`; at most one IsDefault.</summary>
     public List<Profile> Profiles { get; set; } = [];
 
@@ -46,8 +57,10 @@ sealed class Settings
 
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
 
+    /// <summary>MAKEPACK_SETTINGS points tests (selftest, tools\guismoke.ps1) at a file of their own.</summary>
     public static string DefaultPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), S.App, "settings.json");
+        Environment.GetEnvironmentVariable("MAKEPACK_SETTINGS") is { Length: > 0 } test ? test
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), S.App, "settings.json");
 
     /// <summary>This process's copy. One process per session (see Program), so no cross-process merging.</summary>
     public static Settings Current { get; private set; } = Load(DefaultPath);
@@ -78,6 +91,17 @@ sealed class Settings
     }
 
     public static void Reset() { Current = new(); Current.Save(DefaultPath); }
+
+    /// <summary>Re-reads DefaultPath (after a test switched MAKEPACK_SETTINGS).</summary>
+    public static void Reload() => Current = Load(DefaultPath);
+}
+
+/// <summary>A folder on disk, or an archive (and the folder inside it, "" = its root).</summary>
+sealed class Favorite
+{
+    public string Name { get; set; } = "";
+    public string Path { get; set; } = "";
+    public string? Inner { get; set; }
 }
 
 /// <summary>

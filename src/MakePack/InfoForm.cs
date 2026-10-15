@@ -23,7 +23,7 @@ sealed class InfoForm : Form
         foreach (var (label, value) in rows) list.Items.Add(new ListViewItem([label, value]));
 
         var copy = new Button { Text = S.CopyButton, Width = 110, Height = 28, FlatStyle = FlatStyle.System };
-        copy.Click += (_, _) => Clipboard.SetText(string.Join(Environment.NewLine, rows.Select(r => $"{r.Label}: {r.Value}")));
+        copy.Click += (_, _) => MainForm.ToClipboard(string.Join(Environment.NewLine, rows.Select(r => $"{r.Label}: {r.Value}")));
         var close = new Button { Text = S.Close, Width = 94, Height = 28, DialogResult = DialogResult.Cancel, FlatStyle = FlatStyle.System };
         var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 44, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8, 6, 8, 6) };
         bottom.Controls.AddRange([close, copy]);

@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Reflection;
+using System.Runtime.InteropServices;
 using SevenZip;
 // Engine.Probe() the method hides Probe the enum inside Engine, so the type travels under an alias in this file.
 using ProbeResult = MakePack.Probe;
@@ -522,6 +523,46 @@ static class Engine
     /// What the Info window lists, label and value, in order. Unpacked size is summed from the entries: SevenZipSharp's
     /// own UnpackedSize answers -1. Packed size is the file(s) on disk, not the inner tar of a .tar.gz.
     /// </summary>
+    /// <summary>
+    /// Each entry's packed size (kpidPackSize) by position in ArchiveFileData, for the list's Packed column.
+    /// SevenZipSharp does not expose it, so a throwaway extractor of the same file opens the archive the way the
+    /// library does before an extraction and the sizes are asked of its IInArchive. Null when that fails; solid 7z
+    /// blocks report the whole block on their first file and 0 on the rest, as 7-Zip's own list does.
+    /// </summary>
+    // ponytail: reflection into SevenZipSharp 1.6.2 internals (GetArchiveStream, GetArchiveOpenCallback, OpenArchive,
+    // _archive, PropVariant.Object). A library update that renames them only blanks the column. Never ask the
+    // archive an extractor has already closed: that is an access violation in 7z.dll, which no catch survives.
+    public static long[]? PackedSizes(Archive a)
+    {
+        try
+        {
+            const BindingFlags Inst = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
+            var t = typeof(SevenZipExtractor);
+            using var x = string.IsNullOrEmpty(a.Password) ? new SevenZipExtractor(a.OpenPath) : new SevenZipExtractor(a.OpenPath, a.Password);
+            var count = x.ArchiveFileData.Count;
+            if (count != a.X.ArchiveFileData.Count) return null;
+            var stream = t.GetMethod("GetArchiveStream", Inst)!.Invoke(x, [false]);
+            var callback = t.GetMethod("GetArchiveOpenCallback", Inst)!.Invoke(x, null);
+            if (t.GetMethod("OpenArchive", Inst)!.Invoke(x, [stream, callback]) is not true) return null;
+            var arc = t.GetField("_archive", Inst)!.GetValue(x) ?? throw new InvalidOperationException();
+            var get = t.Assembly.GetType("SevenZip.IInArchive")!.GetMethod("GetProperty")!;
+            var packed = Enum.Parse(t.Assembly.GetType("SevenZip.ItemPropId")!, "PackedSize");
+            var value = get.GetParameters()[2].ParameterType.GetElementType()!.GetProperty("Object", Inst)!;
+            var sizes = new long[count];
+            var args = new object?[3];
+            for (var i = 0; i < count; i++)
+            {
+                args[0] = (uint)x.ArchiveFileData[i].Index;
+                args[1] = packed;
+                args[2] = Activator.CreateInstance(value.DeclaringType!);
+                get.Invoke(arc, args);
+                sizes[i] = value.GetValue(args[2]) is { } v ? System.Convert.ToInt64(v) : 0;
+            }
+            return sizes;
+        }
+        catch { return null; }
+    }
+
     public static List<(string Label, string Value)> Describe(Archive a)
     {
         var x = a.X;
@@ -910,18 +951,19 @@ static class Engine
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    struct SHFILEOPSTRUCT
+    internal struct SHFILEOPSTRUCT
     {
         public IntPtr hwnd; public uint wFunc; public string pFrom; public string? pTo; public ushort fFlags;
         public int fAnyOperationsAborted; public IntPtr hNameMappings; public string? lpszProgressTitle;
     }
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SHFileOperation(ref SHFILEOPSTRUCT op);
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] internal static extern int SHFileOperation(ref SHFILEOPSTRUCT op);
 
     /// <summary>
     /// To the Recycle Bin, all in one shell call. Where there is no bin (network share, bin too small) the
     /// shell asks before deleting for good (FOF_WANTNUKEWARNING) instead of doing it silently.
     /// </summary>
-    public static void Recycle(IEnumerable<string> paths)
+    /// <param name="undo">false = Shift+Del: gone for good, no Recycle Bin (the caller has asked).</param>
+    public static void Recycle(IEnumerable<string> paths, bool undo = true)
     {
         const uint FO_DELETE = 3;
         const ushort FOF_SILENT = 0x4, FOF_NOCONFIRMATION = 0x10, FOF_ALLOWUNDO = 0x40, FOF_NOERRORUI = 0x400, FOF_WANTNUKEWARNING = 0x4000;
@@ -931,7 +973,7 @@ static class Engine
         {
             wFunc = FO_DELETE,
             pFrom = string.Join("\0", list) + "\0\0",   // double-NUL-terminated list
-            fFlags = FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOERRORUI | FOF_WANTNUKEWARNING,
+            fFlags = (ushort)(FOF_SILENT | FOF_NOCONFIRMATION | FOF_NOERRORUI | (undo ? FOF_ALLOWUNDO | FOF_WANTNUKEWARNING : 0)),
         };
         var rc = SHFileOperation(ref op);
         if (rc != 0 || op.fAnyOperationsAborted != 0) throw new IOException(string.Format(S.RecycleFailedFmt, rc));

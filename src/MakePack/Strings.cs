@@ -289,4 +289,113 @@ static class S
     public static string BlockedFmt => Uk
         ? "Windows не дозволив зняти свій вибір для: {0}. Оберіть MakePack вручну через «Відкрити за допомогою → Завжди»."
         : "Windows refused to clear its own choice for: {0}. Pick MakePack manually via 'Open with → Always'.";
+
+    // main window: menus (MAIN_MENU, research notes)
+    public static string MFile => Uk ? "&Файл" : "&File";
+    public static string MCommands => Uk ? "&Команди" : "&Commands";
+    public static string MTools => Uk ? "&Інструменти" : "Tool&s";
+    public static string MFavorites => Uk ? "&Обране" : "Fav&orites";
+    public static string MOptions => Uk ? "&Параметри" : "Optio&ns";
+    public static string MHelp => Uk ? "&Довідка" : "&Help";
+    public static string OpenArchive => Uk ? "Відкрити архів…" : "Open archive…";
+    public static string ChangeDrive => Uk ? "Змінити диск" : "Change drive";
+    public static string CopyFiles => Uk ? "Копіювати файли в буфер" : "Copy files to clipboard";
+    public static string PasteFiles => Uk ? "Вставити файли з буфера" : "Paste files from clipboard";
+    public static string CopyNames => Uk ? "Копіювати повні імена" : "Copy full names to clipboard";
+    public static string SelectAllItems => Uk ? "Виділити все" : "Select all";
+    public static string SelectGroup => Uk ? "Виділити групу…" : "Select group…";
+    public static string DeselectGroup => Uk ? "Зняти виділення групи…" : "Deselect group…";
+    public static string InvertSelection => Uk ? "Інвертувати виділення" : "Invert selection";
+    public static string Exit => Uk ? "Вийти" : "Exit";
+    public static string AddCmd => Uk ? "Додати файли в архів…" : "Add files to archive…";
+    public static string ExtractTo => Uk ? "Розпакувати в…" : "Extract to…";
+    public static string ExtractNoAsk => Uk ? "Розпакувати без підтвердження" : "Extract without confirmation";
+    public static string TestCmd => Uk ? "Перевірити архів" : "Test archived files";
+    public static string ViewCmd => Uk ? "Переглянути файл" : "View file";
+    public static string DeleteCmd => Uk ? "Вилучити файли" : "Delete files";
+    public static string FindCmd => Uk ? "Знайти файли…" : "Find files…";
+    public static string InfoCmd => Uk ? "Відомості" : "Show information";
+    public static string AddFavorite => Uk ? "Додати в обране…" : "Add to favorites…";
+    public static string OrganizeFavorites => Uk ? "Упорядкувати обране…" : "Organize favorites…";
+    public static string FileListMenu => Uk ? "Список файлів" : "File list";
+    public static string FlatView => Uk ? "Плаский вигляд (усі файли архіву)" : "Flat folders view";
+    public static string ListMode => Uk ? "Список" : "List view";
+    public static string DetailsMode => Uk ? "Таблиця" : "Details";
+    public static string FolderTree => Uk ? "Дерево тек" : "Folder tree";
+    public static string About => Uk ? "Про MakePack" : "About MakePack";
+    public static string AboutText => Uk ? "Архіватор на 7z.dll (7-Zip, LGPL).\nMakeMD" : "An archiver on 7z.dll (7-Zip, LGPL).\nMakeMD";
+
+    // main window: toolbar (short labels under the icons)
+    public static string TbAdd => Uk ? "Додати" : "Add";
+    public static string TbExtract => Uk ? "Розпакувати в" : "Extract To";
+    public static string TbTest => Uk ? "Тест" : "Test";
+    public static string TbView => Uk ? "Переглянути" : "View";
+    public static string TbDelete => Uk ? "Вилучити" : "Delete";
+    public static string TbFind => Uk ? "Знайти" : "Find";
+    public static string TbInfo => Uk ? "Відомості" : "Info";
+    public static string TbConvert => Uk ? "Конвертувати" : "Convert";
+    public static string TbReport => Uk ? "Звіт" : "Report";
+
+    // main window: list, address bar, status bar
+    public static string Crc32 => "CRC32";
+    public static string PathColumn => Uk ? "Шлях" : "Path";
+    public static string OpenCmd => Uk ? "Відкрити" : "Open";
+    public static string ShowContents => Uk ? "Показати вміст архіву" : "Show archive contents";
+    public static string NewFolder => Uk ? "Створити теку" : "Create a new folder";
+    public static string NewFolderName => Uk ? "Нова тека" : "New folder";
+    public static string ViewAs => Uk ? "Вигляд" : "View as";
+    public static string SortBy => Uk ? "Сортувати за" : "Sort by";
+    public static string PropertiesCmd => Uk ? "Властивості" : "Properties";
+    public static string ArchiveAddressFmt => Uk ? "{0} — архів {1}, розпаковано {2}" : "{0} - {1} archive, unpacked size {2}";
+    public static string TotalFmt => Uk ? "Разом: {0}" : "Total: {0}";
+    public static string ChosenFmt => Uk ? "Вибрано: {0}" : "Selected: {0}";
+    public static string FoldersN(long n) => Uk ? $"{n:#,0} {Plural(n, "тека", "теки", "тек")}" : $"{n:#,0} {(n == 1 ? "folder" : "folders")}";
+    public static string FilesN(long n) => Uk ? $"{n:#,0} {Plural(n, "файл", "файли", "файлів")}" : $"{n:#,0} {(n == 1 ? "file" : "files")}";
+    public static string Bytes(long n) => Uk ? $"{n:#,0} байт" : $"{n:#,0} {(n == 1 ? "byte" : "bytes")}";
+
+    /// <summary>Ukrainian noun after a number: 1 файл, 2 файли, 5 файлів, 11 файлів, 21 файл.</summary>
+    static string Plural(long n, string one, string few, string many) =>
+        (n % 10, n % 100) switch
+        {
+            (1, not 11) => one,
+            (2 or 3 or 4, < 12 or > 14) => few,
+            _ => many,
+        };
+
+    // main window: messages
+    public static string NothingSelected => Uk ? "Нічого не вибрано. Виділіть файли для цієї дії." : "No files selected. Select files for this operation.";
+    public static string NoArchivesSelected => Uk ? "Серед вибраного немає архівів." : "There are no archives among the selected files.";
+    public static string ConfirmRecycleFmt => Uk ? "Перемістити в Кошик: {0}?" : "Move to the Recycle Bin: {0}?";
+    public static string ConfirmNukeFmt => Uk ? "Вилучити НАЗАВЖДИ, без Кошика: {0}?\n\nЦе не можна скасувати." : "Delete PERMANENTLY, bypassing the Recycle Bin: {0}?\n\nThis cannot be undone.";
+    public static string PathNotFoundFmt => Uk ? "Шлях не знайдено:\n{0}" : "Path not found:\n{0}";
+    public static string CannotReadFmt => Uk ? "Не вдалося прочитати «{0}»: {1}" : "Cannot read '{0}': {1}";
+    public static string MaskPrompt => Uk ? "Маска (кілька через ;), напр. *.txt;*.md:" : "Mask (several with ;), e.g. *.txt;*.md:";
+    public static string FavoritePrompt => Uk ? "Назва в обраному:" : "Name in favorites:";
+    public static string TestSummaryFmt => Uk ? "Перевірено архівів: {0}. Без помилок: {1}." : "Archives tested: {0}. Without errors: {1}.";
+    public static string MoveUp => Uk ? "Вгору" : "Move up";
+    public static string MoveDown => Uk ? "Вниз" : "Move down";
+
+    // viewer and Find files windows
+    public static string MEdit => Uk ? "&Правка" : "&Edit";
+    public static string MView => Uk ? "&Вигляд" : "&View";
+    public static string CopyCmd => Uk ? "Копіювати" : "Copy";
+    public static string FindText => Uk ? "Знайти…" : "Find…";
+    public static string FindNext => Uk ? "Знайти далі" : "Find next";
+    public static string WordWrap => Uk ? "Перенос слів" : "Word wrap";
+    public static string FontCmd => Uk ? "Шрифт…" : "Font…";
+    public static string MatchCase => Uk ? "Враховувати регістр" : "Match case";
+    public static string NotFoundFmt => Uk ? "«{0}» не знайдено." : "'{0}' not found.";
+    public static string Truncated => Uk ? " (показано перші 16 МБ)" : " (first 16 MB shown)";
+    public static string FindFilesTitle => Uk ? "Пошук файлів" : "Find files";
+    public static string FileMasks => Uk ? "Маски файлів:" : "File masks:";
+    public static string TextToFind => Uk ? "Текст для пошуку:" : "Text to find:";
+    public static string LookIn => Uk ? "Шукати в:" : "Look in:";
+    public static string Subfolders => Uk ? "У підтеках" : "Subfolders";
+    public static string InArchives => Uk ? "Шукати в архівах" : "Search inside archives";
+    public static string Stop => Uk ? "Стоп" : "Stop";
+    public static string Locate => Uk ? "Показати" : "Locate";
+    public static string FileColumn => Uk ? "Файл" : "File";
+    public static string Location => Uk ? "Розташування" : "Location";
+    public static string FoundFmt => Uk ? "{0} знайдено" : "{0} found";
+    public static string SkippedFmt => Uk ? ", пропущено: {0}" : ", {0} skipped";
 }

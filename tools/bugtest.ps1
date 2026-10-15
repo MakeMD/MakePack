@@ -36,6 +36,10 @@ public static void Letters(string path, int bytes, int seed) {
 
 $SevenZ = Join-Path $PSScriptRoot '..\third_party\7zip\7z.exe'
 $Root   = Join-Path $env:TEMP 'MakePack-bugtest'
+# The app (started from here, so it inherits this) and the tests below share a settings file of their own:
+# the main window saves its size and last folder on close, which must never land in the user's settings.json.
+$env:MAKEPACK_SETTINGS = Join-Path $env:TEMP 'MakePack-bugtest-settings.json'
+Remove-Item -LiteralPath $env:MAKEPACK_SETTINGS -ErrorAction SilentlyContinue
 $script:nPass = 0; $script:nFail = 0; $script:nSkip = 0
 $AT = [System.Windows.Automation.AutomationElement]
 $TS = [System.Windows.Automation.TreeScope]
@@ -191,7 +195,7 @@ public static void Pick(IntPtr combo, int index) {
 }
 
 function With-Settings([string]$json, [scriptblock]$body) {
-    $cfg = Join-Path $env:APPDATA 'MakePack\settings.json'
+    $cfg = $env:MAKEPACK_SETTINGS
     $backup = $null
     if (Test-Path -LiteralPath $cfg) { $backup = [IO.File]::ReadAllText($cfg) }
     try {
@@ -980,7 +984,7 @@ Test-Case 'create_volumes' {
     $file = Join-Path $src 'payload.bin'
     Rand-File $file (3MB) 777
     # Create remembers format/level in the user's settings.json: put it back afterwards.
-    $cfg = Join-Path $env:APPDATA 'MakePack\settings.json'
+    $cfg = $env:MAKEPACK_SETTINGS
     $backup = $null
     if (Test-Path -LiteralPath $cfg) { $backup = [IO.File]::ReadAllText($cfg) }
     try {
@@ -1029,7 +1033,7 @@ Test-Case 'create_test_delete' {
     $d = New-TestDir 'testdelete'
     $src = New-Dir (Join-Path $d 'tobin')
     Set-Content -LiteralPath (Join-Path $src 'keep.txt') -Value ('payload ' * 2000) -Encoding ASCII
-    $cfg = Join-Path $env:APPDATA 'MakePack\settings.json'
+    $cfg = $env:MAKEPACK_SETTINGS
     $backup = $null
     if (Test-Path -LiteralPath $cfg) { $backup = [IO.File]::ReadAllText($cfg) }
     try {
@@ -1084,7 +1088,7 @@ Test-Case 'create_separate' {
         Set-Content -LiteralPath (Join-Path $f ($n + '.txt')) -Value ('payload ' + $n) -Encoding ASCII
         $ins += (Q $f)
     }
-    $cfg = Join-Path $env:APPDATA 'MakePack\settings.json'
+    $cfg = $env:MAKEPACK_SETTINGS
     $backup = $null
     if (Test-Path -LiteralPath $cfg) { $backup = [IO.File]::ReadAllText($cfg) }
     try {
@@ -1126,7 +1130,7 @@ Test-Case 'create_sfx' {
     $src = New-Dir (Join-Path $d 'payload')
     $file = Join-Path $src 'payload.bin'
     Rand-File $file (300KB) 2026
-    $cfg = Join-Path $env:APPDATA 'MakePack\settings.json'
+    $cfg = $env:MAKEPACK_SETTINGS
     $backup = $null
     if (Test-Path -LiteralPath $cfg) { $backup = [IO.File]::ReadAllText($cfg) }
     try {
@@ -1176,7 +1180,7 @@ Test-Case 'create_zipcrypto' {
     $src = New-Dir (Join-Path $d 'payload')
     $file = Join-Path $src 'payload.txt'
     Set-Content -LiteralPath $file -Value ('zipcrypto payload ' * 500) -Encoding ASCII
-    $cfg = Join-Path $env:APPDATA 'MakePack\settings.json'
+    $cfg = $env:MAKEPACK_SETTINGS
     $backup = $null
     if (Test-Path -LiteralPath $cfg) { $backup = [IO.File]::ReadAllText($cfg) }
     try {
@@ -1983,7 +1987,7 @@ Test-Case 'gui_context_menu' {
     $zip = Join-Path $d 'menu.zip'
     Push-Location $src
     try { SevenZip @('a', '-tzip', $zip, '*', '-bso0', '-bsp0') } finally { Pop-Location }
-    $add = S-Text 'AddToArchive'
+    $add = S-Text 'TbAdd'
     $p = Start-App @((Q $zip))
     $texts = Wait-Text $p $add 10
     Assert (-not $p.HasExited) ("the process exited with code " + $p.ExitCode + " instead of showing the archive")
