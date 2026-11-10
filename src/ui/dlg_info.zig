@@ -3,11 +3,11 @@ const std = @import("std");
 const kit = @import("kit");
 const D = @import("dialogs.zig");
 const C = @import("ctx.zig");
+const shell = @import("mw_shell.zig");
 
 const S = C.S;
 const engine = C.engine;
 const im = kit.im;
-const w = kit.w;
 const Dialogs = D.Dialogs;
 const Allocator = std.mem.Allocator;
 
@@ -43,6 +43,8 @@ pub const Info = struct {
                 _ = im.ImGui_TableNextColumn();
                 var vb: [1200]u8 = undefined;
                 _ = im.ImGui_Selectable((std.mem.printSentinel(&vb, "{s}##info_v{d}", .{ r.value[0..@min(r.value.len, 1100)], i }, 0) catch continue).ptr);
+                // a value the column cuts off (a long path) is whole in its tooltip
+                if (im.ImGui_CalcTextSizeEx(r.value.ptr, r.value.ptr + r.value.len, false, -1).x > im.ImGui_GetItemRectSize().x) D.tooltip(r.value);
             }
             im.ImGui_EndTable();
         }
@@ -54,7 +56,7 @@ pub const Info = struct {
                 if (i > 0) text.appendSlice(f.gpa, "\r\n") catch {};
                 text.print(f.gpa, "{s}: {s}", .{ r.label, r.value }) catch {};
             }
-            toClipboard(f.gpa, D.owner(d), text.items);
+            _ = shell.setText(f.gpa, D.owner(d), text.items);
         }
         im.ImGui_SameLine();
         if (D.button(S.close.get(), "info_close") or D.escPressed()) return false;
@@ -86,19 +88,4 @@ pub fn open(d: *Dialogs, a: *engine.Archive, owned: bool) void {
     f.rows = engine.describe(ar, d.ctx.io, a) catch &.{};
     f.title_text = S.fill(ar, S.infoTitleFmt.get(), .{a.display()}) catch S.app;
     D.push(d, Info, f, true);
-}
-
-/// MainForm.ToClipboard: Unicode text.
-pub fn toClipboard(gpa: Allocator, owner: w.HWND, text: []const u8) void {
-    const wide = kit.win.toW(gpa, text) catch return;
-    defer gpa.free(wide);
-    const bytes = (wide.len + 1) * 2;
-    const h = w.GlobalAlloc(@intCast(w.GMEM_MOVEABLE), bytes) orelse return;
-    const p: [*]u16 = @ptrCast(@alignCast(w.GlobalLock(h) orelse return));
-    @memcpy(p[0 .. wide.len + 1], wide[0 .. wide.len + 1]);
-    _ = w.GlobalUnlock(h);
-    if (w.OpenClipboard(owner) == 0) return;
-    defer _ = w.CloseClipboard();
-    _ = w.EmptyClipboard();
-    _ = w.SetClipboardData(@intCast(w.CF_UNICODETEXT), h);
 }

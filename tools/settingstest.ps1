@@ -7,7 +7,6 @@
 param([string]$Exe = "$PSScriptRoot\..\zig-out\bin\MakePack.exe", [string]$Shot = "", [ValidateRange(1, 9)][int]$Screen = 1)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\..\MakeKit\tools\imgui-auto.ps1')
-Add-Type -AssemblyName System.Drawing
 
 $rand = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $work = Join-Path $env:TEMP ('makepack-test-' + $rand)
@@ -27,7 +26,8 @@ function Label($app, [string]$id) {
     if (-not $it) { throw "no $id on screen" }
     $it
 }
-function Text-Of($it) { $l = $it.label; $l.Substring(0, $l.IndexOf('##')) }
+# What an item shows: its value (combo preview, input text), else its label up to '##'.
+function Text-Of($it) { if ($null -ne $it.value) { return [string]$it.value }; $l = $it.label; $l.Substring(0, $l.IndexOf('##')) }
 function Wait-Exit($app, [int]$ms = 30000) { if (-not $app.Process.WaitForExit($ms)) { throw 'the app did not exit' }; $app.Process.ExitCode }
 function Json([string]$s) { [IO.File]::WriteAllText($cfg, $s) }
 function Esc([string]$p) { $p -replace '\\', '\\' }
@@ -60,7 +60,7 @@ try {
     $win = @(Get-AutoItems $app -Windows | Where-Object { $_.name -like '*###settings*' }) | Select-Object -First 1
     if (-not $win) { throw 'settings dialog did not open' }
     Write-Host "settings dialog '$($win.name)'"
-    if ($Shot) { $bmp = Save-AutoScreenshot $app ($Shot + '.bmp'); $img = [System.Drawing.Image]::FromFile($bmp); try { $img.Save($Shot, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $img.Dispose() }; Remove-Item $bmp }
+    if ($Shot) { $null = Save-AutoScreenshot $app $Shot -Png }
     Invoke-AutoClick $app '##settings_ok'
     $null = Invoke-AutoFrames $app 3
     $folder = (Get-Content $cfg -Raw | ConvertFrom-Json).ArchiveFolder

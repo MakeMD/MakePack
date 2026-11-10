@@ -75,7 +75,6 @@ pub const folderType = L("<тека>", "<folder>");
 
 // status bar
 pub const itemsFmt = L("{0} об'єктів", "{0} items");
-pub const selectedFmt = L("{0} вибрано, {1}", "{0} selected, {1}");
 pub const addedFmt = L("Додано: {0}", "Added: {0}");
 pub const renamedFmt = L("Перейменовано: {0}", "Renamed: {0}");
 pub const deletedFmt = L("Вилучено: {0}", "Deleted: {0}");
@@ -191,6 +190,17 @@ pub const cannotOpen = L("Не вдалося відкрити архів.", "Ca
 pub const cancelled = L("Скасовано.", "Cancelled.");
 pub const notAnArchive = L("Це не архів або формат не підтримується.", "This is not an archive, or the format is not supported.");
 pub const damaged = L("Файл пошкоджено.", "The file is damaged.");
+// opened, but 7-Zip reported errors (kpidErrorFlags / kpidWarningFlags): one text per cause
+pub const openedTruncated = L(
+    "Архів обривається раніше, ніж мав би: показано лише те, що вціліло.",
+    "The archive ends too early: only what survived is listed.",
+);
+pub const openedBadHeaders = L(
+    "Заголовки архіву пошкоджено: частини файлів може не бути в списку.",
+    "The archive headers are damaged: some files may be missing from the list.",
+);
+pub const openedDataAfterEnd = L("Після кінця архіву є зайві дані.", "There is extra data after the end of the archive.");
+pub const openedWithErrors = L("Архів відкрито з помилками: список може бути неповним.", "The archive opened with errors: the list may be incomplete.");
 pub const fileNotFoundFmt = L("Файл не знайдено: {0}", "File not found: {0}");
 pub const wrongPassword = L("Неправильний пароль.", "Wrong password.");
 pub const passwordNeeded = L(

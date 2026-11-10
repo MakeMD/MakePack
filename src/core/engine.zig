@@ -589,22 +589,76 @@ fn isUsed(list: []const []const u8, s: []const u8) bool {
     return false;
 }
 
-/// Engine.NewTempDir: %TEMP%\MakePack\<guid>, remembered for deinit.
-pub fn newTempDir(gpa: Allocator, io: Io) ![]u8 {
+/// "%TEMP%\MakePack" (GetTempPathW, no trailing backslash) into `buf`.
+fn tempRoot(buf: *[w.MAX_PATH * 3 + 16]u8) ![]const u8 {
     var wbuf: [w.MAX_PATH + 1]u16 = undefined;
     const n = w.GetTempPathW(wbuf.len, &wbuf);
     if (n == 0 or n > wbuf.len) return error.Unexpected;
     var tbuf: [w.MAX_PATH * 3]u8 = undefined;
     const tmp = std.mem.trimEnd(u8, tbuf[0..std.unicode.wtf16LeToWtf8(&tbuf, wbuf[0..n])], "\\");
+    return std.mem.print(buf, "{s}\\MakePack", .{tmp});
+}
+
+/// Engine.NewTempDir: %TEMP%\MakePack\<guid>, remembered for deinit.
+pub fn newTempDir(gpa: Allocator, io: Io) ![]u8 {
+    var rb: [w.MAX_PATH * 3 + 16]u8 = undefined;
+    const root = try tempRoot(&rb);
     var rnd: [16]u8 = undefined;
     io.random(&rnd);
-    const d = try gpa.print("{s}\\MakePack\\{x}", .{ tmp, &rnd });
+    const d = try gpa.print("{s}\\{x}", .{ root, &rnd });
     errdefer gpa.free(d);
     try Io.Dir.cwd().createDirPath(io, d);
     temps_lock.lock();
     defer temps_lock.unlock();
     try temps.append(scratch, try scratch.dupe(u8, d));
     return d;
+}
+
+/// GUI startup: the temp dirs that killed runs left in %TEMP%\MakePack, once untouched for a day. One a running
+/// MakePack still uses is kept: Windows refuses to rename a folder while a file in it is open (7z.dll holds the
+/// nested .tar / joined .001 it lists), so each is renamed before it is deleted.
+// ponytail: a temp file an external viewer keeps open without a lock for a day can go; C# had no sweep at all.
+pub fn sweepStaleTemps(io: Io) void {
+    var rb: [w.MAX_PATH * 3 + 16]u8 = undefined;
+    sweepDir(io, tempRoot(&rb) catch return, 24 * 3600);
+}
+
+fn sweepDir(io: Io, root: []const u8, max_age_s: i64) void {
+    var dir = Io.Dir.cwd().openDir(io, root, .{ .iterate = true }) catch return;
+    defer dir.close(io);
+    const cutoff = Io.Timestamp.now(io, .real).toSeconds() - max_age_s;
+    var it = dir.iterate();
+    while (it.next(io) catch null) |e| {
+        if (e.kind != .directory) continue;
+        const st = dir.statFile(io, e.name, .{}) catch continue;
+        if (st.mtime.toSeconds() > cutoff) continue;
+        var nb: [300]u8 = undefined;
+        // a "-gone" folder is one an earlier sweep renamed but could not finish deleting
+        const gone = if (std.mem.endsWith(u8, e.name, "-gone")) e.name else blk: {
+            const g = std.mem.print(&nb, "{s}-gone", .{e.name}) catch continue;
+            dir.rename(e.name, dir, g, io) catch continue; // in use
+            break :blk g;
+        };
+        dir.deleteTree(io, gone) catch {};
+    }
+}
+
+test "sweepDir: stale temp dirs go, one with an open file stays" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "old/sub");
+    try tmp.dir.createDirPath(io, "busy");
+    try tmp.dir.writeFile(io, .{ .sub_path = "busy/x.tar", .data = "x" });
+    const root = try tmp.dir.realPathFileAlloc(io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+    const held = try tmp.dir.openFile(io, "busy/x.tar", .{});
+    sweepDir(io, root, 3600); // nothing is an hour old yet
+    try tmp.dir.access(io, "old", .{});
+    sweepDir(io, root, -60); // everything counts as stale
+    held.close(io);
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "old", .{}));
+    try tmp.dir.access(io, "busy/x.tar", .{});
 }
 
 /// Engine.Nuke: delete a folder tree, ignoring every error.
@@ -645,42 +699,16 @@ pub fn sfxModule(gpa: Allocator) ![]u8 {
 
 // ---- Win32 file helpers (paths the way .NET's File/Directory/Path see them) ----------------------------
 
-/// A path for the Win32 file APIs (scratch-owned): long ones (>= 248 UTF-16 units, CreateDirectoryW's limit) made
-/// absolute and prefixed \\?\ (\\?\UNC\ for shares), as .NET does - so nothing here depends on the longPathAware
-/// manifest, which works only with HKLM LongPathsEnabled=1. Same rule as sevenzip.toPathW (private to MP-A).
+/// A path for the Win32 file APIs (scratch-owned): kit.win.longPathW prefixes long ones (>= 248 UTF-16 units)
+/// `\\?\` as .NET does, so nothing here depends on the longPathAware manifest + HKLM LongPathsEnabled. Heap only:
+/// safe on 7z.dll's small-stack worker threads.
 fn wide(p: []const u8) ![:0]u16 {
-    const wp = try kit.win.toW(scratch, p);
-    const L = std.unicode.utf8ToUtf16LeStringLiteral;
-    if (wp.len < 248 or std.mem.startsWith(u16, wp, L("\\\\?\\")) or std.mem.startsWith(u16, wp, L("\\\\.\\"))) return wp;
-    defer scratch.free(wp);
-    const n = w.GetFullPathNameW(wp.ptr, 0, null, null); // the W version takes long paths as they are
-    if (n == 0) return error.BadPathName;
-    const full = try scratch.alloc(u16, n);
-    defer scratch.free(full);
-    const len = w.GetFullPathNameW(wp.ptr, n, full.ptr, null);
-    if (len == 0 or len >= n) return error.BadPathName;
-    const unc = std.mem.startsWith(u16, full[0..len], L("\\\\"));
-    return std.mem.concatWithSentinel(scratch, u16, &.{ if (unc) L("\\\\?\\UNC") else L("\\\\?\\"), full[@intFromBool(unc)..len] }, 0);
+    return kit.win.longPathW(scratch, p);
 }
 
-fn attrs(p: []const u8) ?u32 {
-    const wp = wide(p) catch return null;
-    defer scratch.free(wp);
-    const a = w.GetFileAttributesW(wp.ptr);
-    return if (a == w.INVALID_FILE_ATTRIBUTES) null else a;
-}
-
-/// File.Exists
-pub fn fileExists(p: []const u8) bool {
-    const a = attrs(p) orelse return false;
-    return a & w.FILE_ATTRIBUTE_DIRECTORY == 0;
-}
-
-/// Directory.Exists
-pub fn dirExists(p: []const u8) bool {
-    const a = attrs(p) orelse return false;
-    return a & w.FILE_ATTRIBUTE_DIRECTORY != 0;
-}
+/// File.Exists / Directory.Exists (long paths too).
+pub const fileExists = kit.win.isFile;
+pub const dirExists = kit.win.isDir;
 
 /// Path.GetFullPath (GetFullPathNameW: relative to the current directory, "." and ".." folded, trailing
 /// dots and spaces of a segment dropped).
@@ -797,8 +825,8 @@ fn combine(gpa: Allocator, dir: []const u8, rel: []const u8) ![]u8 {
     return joinName(gpa, dir, rel, "");
 }
 
-/// Stream `pieces` into a new `output` (Engine.Glue).
-fn glue(io: Io, pieces: []const []const u8, output: []const u8) !void {
+/// Stream `pieces` into a new `output` (Engine.Glue). Cancel is checked per MB.
+fn glue(io: Io, pieces: []const []const u8, output: []const u8, progress: Progress) !void {
     var out = try Io.Dir.cwd().createFile(io, output, .{});
     defer out.close(io);
     var wbuf: [64 * 1024]u8 = undefined;
@@ -808,7 +836,14 @@ fn glue(io: Io, pieces: []const []const u8, output: []const u8) !void {
         defer in.close(io);
         var rbuf: [64 * 1024]u8 = undefined;
         var rd = in.reader(io, &rbuf);
-        _ = rd.interface.streamRemaining(&wr.interface) catch |e| return if (e == error.ReadFailed) rd.err.? else wr.err.?;
+        while (true) {
+            if (progress.cancelled()) return error.Canceled;
+            _ = rd.interface.stream(&wr.interface, .limited(1 << 20)) catch |e| switch (e) {
+                error.EndOfStream => break,
+                error.ReadFailed => return rd.err.?,
+                error.WriteFailed => return wr.err.?,
+            };
+        }
     }
     wr.interface.flush() catch return wr.err.?;
 }
@@ -833,24 +868,19 @@ fn partsOf(gpa: Allocator, first_part: []const u8) ![][]u8 {
     return list.toOwnedSlice(gpa);
 }
 
-fn freeList(gpa: Allocator, list: []const []u8) void {
-    for (list) |p| gpa.free(p);
-    gpa.free(list);
-}
-
 /// Engine.Join: glues a .001 set (C#: SevenZipSharp's volume callback served .002 onwards twice).
-fn joinParts(gpa: Allocator, io: Io, first_part: []const u8, joined: []const u8) !void {
+fn joinParts(gpa: Allocator, io: Io, first_part: []const u8, joined: []const u8, progress: Progress) !void {
     const parts = try partsOf(gpa, first_part);
-    defer freeList(gpa, parts);
+    defer kit.win.freeList(gpa, parts);
     if (parts.len == 0) return error.FileNotFound;
-    try glue(io, @ptrCast(parts), joined);
+    try glue(io, @ptrCast(parts), joined, progress);
 }
 
 /// A .001 set counts all its parts.
 fn sizeOnDisk(gpa: Allocator, io: Io, archive: []const u8) u64 {
     if (!isFirstPart(archive)) return fileSize(io, archive) catch 0;
     const parts = partsOf(gpa, archive) catch return 0;
-    defer freeList(gpa, parts);
+    defer kit.win.freeList(gpa, parts);
     var sum: u64 = 0;
     for (parts) |p| sum += fileSize(io, p) catch 0;
     return sum;
@@ -870,7 +900,7 @@ const sig_pe: Sig = .{ .off = 0, .b = "MZ" };
 // ponytail: the formats that carry a signature, minus the three above (which are probed further). Something
 // 7z.dll could still open but that is not listed (exe/nsis, ...) is answered "not an archive".
 const signatures = [_]Sig{
-    .{ .off = 0, .b = "PK\x03\x04" },                     .{ .off = 0, .b = "PK\x05\x06" }, .{ .off = 0, .b = "PK\x07\x08" }, // zip
+    .{ .off = 0, .b = "PK\x03\x04" }, .{ .off = 0, .b = "PK\x05\x06" }, .{ .off = 0, .b = "PK\x07\x08" }, // zip
     .{ .off = 0, .b = "\x1F\x8B" }, // gzip
     .{ .off = 0, .b = "BZh" }, // bzip2
     .{ .off = 0, .b = "\xFD7zXZ\x00" }, // xz
@@ -879,11 +909,11 @@ const signatures = [_]Sig{
     .{ .off = 0, .b = "MSWIM\x00\x00\x00" }, // wim
     .{ .off = 0, .b = "\x60\xEA" }, // arj
     .{ .off = 2, .b = "-lh" }, // lzh
-    .{ .off = 0, .b = "07070" },                          .{ .off = 0, .b = "\xC7\x71" },   .{ .off = 0, .b = "\x71\xC7" }, // cpio
+    .{ .off = 0, .b = "07070" }, .{ .off = 0, .b = "\xC7\x71" }, .{ .off = 0, .b = "\x71\xC7" }, // cpio
     .{ .off = 0, .b = "\xED\xAB\xEE\xDB" }, // rpm
     .{ .off = 0, .b = "!<arch>\n" }, // deb / ar
     .{ .off = 0, .b = "xar!" }, // xar
-    .{ .off = 0, .b = "conectix" },                       .{ .off = -512, .b = "conectix" }, // vhd
+    .{ .off = 0, .b = "conectix" }, .{ .off = -512, .b = "conectix" }, // vhd
     .{ .off = -512, .b = "koly" }, // dmg
     .{ .off = 32769, .b = "CD001" }, // iso
     .{ .off = 32769, .b = "BEA01" }, // udf
@@ -1058,8 +1088,8 @@ fn nonEmpty(p: ?[]const u8) ?[]const u8 {
 }
 
 /// The binding's open, its errors in Engine's words.
-fn openX(gpa: Allocator, path: []const u8, password: ?[]const u8, shown: []const u8, diag: ?*Diag) !*sevenzip.InArchive {
-    return sevenzip.InArchive.open(gpa, path, password) catch |e| switch (e) {
+fn openX(gpa: Allocator, path: []const u8, password: ?[]const u8, shown: []const u8, progress: Progress, diag: ?*Diag) !*sevenzip.InArchive {
+    return sevenzip.InArchive.open(gpa, path, password, progress.cancel) catch |e| switch (e) {
         error.NotArchive => error.NotAnArchive,
         error.Failed => error.Damaged, // SevenZipArchiveException: the open itself failed
         error.FileNotFound => {
@@ -1090,8 +1120,9 @@ fn nestable(name: []const u8) bool {
 }
 
 /// Engine.Open: opens the archive, unwrapping containers that hold one archive (x.tar.gz, parts.7z.001,
-/// x.tar.gz.001, up to 3 levels). Close with Archive.close.
-pub fn open(gpa: Allocator, io: Io, path: []const u8, password: ?[]const u8, diag: ?*Diag) anyerror!*Archive {
+/// x.tar.gz.001, up to 3 levels). Close with Archive.close. Only `progress.cancel` is used (error.Canceled; the
+/// temp files of a half-done unwrap are removed).
+pub fn open(gpa: Allocator, io: Io, path: []const u8, password: ?[]const u8, progress: Progress, diag: ?*Diag) anyerror!*Archive {
     const pw = nonEmpty(password);
     var dir: ?[]u8 = null;
     errdefer if (dir) |d| {
@@ -1110,9 +1141,9 @@ pub fn open(gpa: Allocator, io: Io, path: []const u8, password: ?[]const u8, dia
         const joined = try joinName(gpa, dir.?, withoutExt(path), ""); // parts.7z.001 -> parts.7z
         gpa.free(open_path);
         open_path = joined;
-        try joinParts(gpa, io, path, open_path);
+        try joinParts(gpa, io, path, open_path, progress);
     }
-    var x = try openX(gpa, open_path, pw, path, diag);
+    var x = try openX(gpa, open_path, pw, path, progress, diag);
     errdefer x.close();
     // ponytail: 3 levels covers split -> gz -> tar; deeper nesting is shown as the file it is.
     var depth: u32 = 0;
@@ -1127,8 +1158,8 @@ pub fn open(gpa: Allocator, io: Io, path: []const u8, password: ?[]const u8, dia
         else
             try joinName(gpa, sub, baseName(open_path), ".tar");
         errdefer gpa.free(inner);
-        try extractOne(x, inner);
-        const y = try openX(gpa, inner, null, path, diag);
+        try extractOne(x, inner, progress);
+        const y = try openX(gpa, inner, null, path, progress, diag);
         x.close();
         x = y;
         gpa.free(open_path);
@@ -1150,17 +1181,34 @@ pub fn open(gpa: Allocator, io: Io, path: []const u8, password: ?[]const u8, dia
     return a;
 }
 
+/// 7-Zip's "opened with errors / warnings" (Props.error_flags / warning_flags): the list may be partial. The text
+/// for the main cause, null = clean. A truncated .gz opens clean (its end is only seen when decoding: Test says).
+pub fn openWarning(p: sevenzip.Props) ?S.Str {
+    const f = p.error_flags | p.warning_flags;
+    const af = sevenzip.arc_flag;
+    if (f & af.unexpected_end != 0) return S.openedTruncated;
+    if (f & (af.headers_error | af.encrypted_headers_error) != 0) return S.openedBadHeaders;
+    if (f & af.data_after_end != 0) return S.openedDataAfterEnd;
+    if (f != 0) return S.openedWithErrors;
+    return null;
+}
+
 /// Item 0 of a container into `file`.
-fn extractOne(x: *sevenzip.InArchive, file: []const u8) !void {
+fn extractOne(x: *sevenzip.InArchive, file: []const u8, progress: Progress) !void {
     const Ctx = struct {
         file: []const u8,
+        progress: Progress,
         fn target(ctx: ?*anyopaque, _: *const sevenzip.Item) anyerror!sevenzip.Target {
             const c: *@This() = @ptrCast(@alignCast(ctx));
             return .{ .file = c.file };
         }
+        fn step(ctx: ?*anyopaque, _: u64, _: u64) bool {
+            const c: *@This() = @ptrCast(@alignCast(ctx));
+            return !c.progress.cancelled();
+        }
     };
-    var c: Ctx = .{ .file = file };
-    x.extract(&.{0}, .{ .ctx = &c, .target = Ctx.target }) catch |e| return switch (e) {
+    var c: Ctx = .{ .file = file, .progress = progress };
+    x.extract(&.{0}, .{ .ctx = &c, .target = Ctx.target, .progress = .{ .ctx = &c, .step = Ctx.step } }) catch |e| return switch (e) {
         error.DataError => error.Damaged,
         else => e,
     };
@@ -1443,7 +1491,7 @@ pub fn describe(gpa: Allocator, io: Io, a: *Archive) anyerror![]Row {
 /// Opened only with a password, but would not even list without one: the names are encrypted too.
 fn namesEncrypted(gpa: Allocator, io: Io, a: *const Archive) bool {
     if (a.password == null) return false;
-    const b = open(gpa, io, a.source, null, null) catch return true;
+    const b = open(gpa, io, a.source, null, .none, null) catch return true;
     b.close();
     return false;
 }
@@ -1921,7 +1969,7 @@ pub fn compress(gpa: Allocator, io: Io, inputs: []const []const u8, out_path: []
         defer tryDelete(io, target);
         // Glued into a side file first (C#: straight into out_path): a missing 7z.sfx must not cost an existing exe.
         const glued = try std.mem.concat(ar, u8, &.{ out_path, ".makepack-sfx" });
-        glue(io, &.{ try sfxModule(ar), target }, glued) catch |e| {
+        glue(io, &.{ try sfxModule(ar), target }, glued, .none) catch |e| {
             tryDelete(io, glued);
             return e;
         };
@@ -1935,7 +1983,7 @@ pub fn compress(gpa: Allocator, io: Io, inputs: []const []const u8, out_path: []
     if (o.test_after) {
         const first = if (o.volume_size > 0) try part(ar, out_path, 1) else out_path;
         if (before_test_hook) |h| h(first);
-        const a = try open(gpa, io, first, password, diag);
+        const a = try open(gpa, io, first, password, progress, diag);
         defer a.close();
         var slice: Scaled = .{ .to = progress, .lo = 80, .hi = 100 };
         const ok = try testArchive(gpa, io, a, slice.progress(), diag);
@@ -2011,7 +2059,7 @@ pub fn convert(
 
     var before: @TypeOf(stats(undefined)) = undefined;
     {
-        const a = try open(gpa, io, source, pw, diag);
+        const a = try open(gpa, io, source, pw, progress, diag);
         defer a.close();
         before = stats(a);
         var s: Scaled = .{ .to = progress, .lo = 0, .hi = 45 };
@@ -2048,7 +2096,7 @@ pub fn convert(
 }
 
 fn verify(gpa: Allocator, io: Io, path: []const u8, pw: ?[]const u8, before: @TypeOf(stats(undefined)), progress: Progress) !void {
-    const b = try open(gpa, io, path, pw, null);
+    const b = try open(gpa, io, path, pw, progress, null);
     defer b.close();
     var s: Scaled = .{ .to = progress, .lo = 90, .hi = 100 };
     const ok = try testArchive(gpa, io, b, s.progress(), null);
@@ -2077,7 +2125,7 @@ fn editPath(gpa: Allocator, io: Io, path: []const u8, password: ?[]const u8, for
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
     const ar = arena.allocator();
-    var x: ?*sevenzip.InArchive = try openX(gpa, path, password, path, diag);
+    var x: ?*sevenzip.InArchive = try openX(gpa, path, password, path, progress, diag);
     defer if (x) |p| p.close();
     const keep = try std.mem.concat(ar, u8, &.{ path, ".makepack~" });
     const fresh = try std.mem.concat(ar, u8, &.{ path, ".makepack-new" });
@@ -2215,7 +2263,7 @@ pub fn recycle(gpa: Allocator, paths: []const []const u8, undo: bool, diag: ?*Di
     for (paths) |p| {
         const full = try fullPath(gpa, std.mem.trimEnd(u8, p, "\\/"));
         defer gpa.free(full);
-        if (attrs(full) == null) continue;
+        if (!kit.win.exists(full)) continue;
         const wp = try kit.win.toW(gpa, full);
         defer gpa.free(wp);
         try list.appendSlice(gpa, wp[0 .. wp.len + 1]);
@@ -2239,17 +2287,17 @@ pub fn recycleArchive(gpa: Allocator, io: Io, source: []const u8, diag: ?*Diag) 
     _ = io;
     if (!isFirstPart(source)) return recycle(gpa, &.{source}, true, diag);
     const parts = try partsOf(gpa, source);
-    defer freeList(gpa, parts);
+    defer kit.win.freeList(gpa, parts);
     try recycle(gpa, @ptrCast(parts), true, diag);
 }
 
 /// Files that can run code, or open into something that can (archives, disk images): list, roughly.
 const risky = [_][]const u8{
-    "exe", "com", "scr", "pif", "cpl", "msi", "msp", "msix", "appx", "appxbundle", "dll", "ocx", "sys", "drv",
-    "bat", "cmd", "ps1", "psm1", "psd1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "lnk", "url", "scf", "reg", "inf",
-    "jar", "chm", "iso", "img", "vhd", "vhdx",
-    "doc", "docx", "docm", "dot", "dotx", "dotm", "rtf", "xls", "xlsx", "xlsm", "xlsb", "xlt", "xltx", "xltm", "xla", "xlam",
-    "ppt", "pptx", "pptm", "pps", "ppsx", "ppsm", "pot", "potx", "potm", "ppam", "one", "pub", "vsd", "vsdx", "vsdm", "pdf",
+    "exe",  "com",  "scr",  "pif",  "cpl",  "msi",  "msp",  "msix", "appx", "appxbundle", "dll",  "ocx",  "sys",  "drv",
+    "bat",  "cmd",  "ps1",  "psm1", "psd1", "vbs",  "vbe",  "js",   "jse",  "wsf",        "wsh",  "hta",  "lnk",  "url",
+    "scf",  "reg",  "inf",  "jar",  "chm",  "iso",  "img",  "vhd",  "vhdx", "doc",        "docx", "docm", "dot",  "dotx",
+    "dotm", "rtf",  "xls",  "xlsx", "xlsm", "xlsb", "xlt",  "xltx", "xltm", "xla",        "xlam", "ppt",  "pptx", "pptm",
+    "pps",  "ppsx", "ppsm", "pot",  "potx", "potm", "ppam", "one",  "pub",  "vsd",        "vsdx", "vsdm", "pdf",
 };
 
 /// Engine.ZoneOf: the archive's Zone.Identifier stream, null when it has none.

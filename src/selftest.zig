@@ -238,7 +238,7 @@ fn compress(t: *T, inputs: []const []const u8, archive: []const u8, k: ArchiveKi
 }
 
 fn open(t: *T, archive: []const u8, password: ?[]const u8) !*engine.Archive {
-    return engine.open(t.gpa, t.io, archive, password, &t.diag);
+    return engine.open(t.gpa, t.io, archive, password, .none, &t.diag);
 }
 
 fn unpack(t: *T, a: *engine.Archive, dest: []const u8, mode: OverwriteMode) !void {
@@ -252,7 +252,7 @@ fn count(t: *T, archive: []const u8, password: ?[]const u8) !usize {
 }
 
 fn opens(t: *T, archive: []const u8) bool {
-    const a = engine.open(t.gpa, t.io, archive, null, null) catch return false;
+    const a = engine.open(t.gpa, t.io, archive, null, .none, null) catch return false;
     a.close();
     return true;
 }
@@ -907,9 +907,12 @@ fn volumes(t: *T) !void {
     try t.must(is(r, error.Canceled), "cancel was not reported", .{});
     try t.must((try namesLike(t, t.root, "vol-cancel.7z")).len == 0, "cancel left parts or the temp file behind", .{});
     for ([_]struct { []const u8, ?i64 }{
-        .{ "", 0 },                .{ "100 MB", 100 << 20 }, .{ "700 MB (CD)", 700 << 20 }, .{ "1,5 ГБ", 3 << 29 },
-        .{ "1.5g", 3 << 29 },      .{ "650m", 650 << 20 },   .{ "64 кб", 64 << 10 },        .{ "250000", 250000 },
-        .{ "abc", null },          .{ "10 parsecs", null },  .{ "0", null },
+        .{ "", 0 },            .{ "100 MB", 100 << 20 }, .{ "700 MB (CD)", 700 << 20 },
+        .{ "1,5 ГБ", 3 << 29 },
+        .{ "1.5g", 3 << 29 },  .{ "650m", 650 << 20 },
+        .{ "64 кб", 64 << 10 },
+        .{ "250000", 250000 }, .{ "abc", null },         .{ "10 parsecs", null },
+        .{ "0", null },
     }) |c2| try t.must(engine.parseSize(c2[0]) == c2[1], "ParseSize('{s}') = {?d}, expected {?d}", .{ c2[0], engine.parseSize(c2[0]), c2[1] });
     t.say("OK volumes (7z, zip, tar.gz, cancel, sizes)", .{});
 }
@@ -1800,20 +1803,20 @@ fn guiCheck(t: *T) !void {
     try guiOpen(t, &m, "src");
     const in_src = try guiNames(t, &m);
     try t.must(std.mem.find(u8, in_src, "|sub") != null and std.mem.find(u8, in_src, "|a.txt") != null and std.mem.find(u8, in_src, "|void") != null, "inside src: {s}", .{in_src});
-    try m.up();
+    try guiDone(t, &m, m.up());
     try t.must(eqlS(try guiNames(t, &m), "..|src") and eqlS(guiChosen(&m), "src"), "up inside the archive: {s} chosen {s}", .{ try guiNames(t, &m), guiChosen(&m) });
-    try m.up();
+    try guiDone(t, &m, m.up());
     try t.must(std.mem.find(u8, try guiNames(t, &m), "|alpha") != null and eqlS(guiChosen(&m), "pack.zip"), "up out of the archive: {s}", .{guiChosen(&m)});
-    try m.goBack();
+    try guiDone(t, &m, m.goBack());
     try t.must(eqlS(try guiNames(t, &m), "..|src"), "back into the archive: {s}", .{try guiNames(t, &m)});
-    try m.goForward();
+    try guiDone(t, &m, m.goForward());
     try t.must(std.mem.find(u8, try guiNames(t, &m), "|alpha") != null, "forward to the folder: {s}", .{try guiNames(t, &m)});
     try guiOpen(t, &m, "outer.7z");
     try guiOpen(t, &m, "inner.zip");
     try t.must(eqlS(try guiNames(t, &m), "..|a.txt"), "nested archive: {s}", .{try guiNames(t, &m)});
-    try m.up();
+    try guiDone(t, &m, m.up());
     try t.must(eqlS(guiChosen(&m), "inner.zip") and std.mem.find(u8, m.addressText(&ab), "outer.7z") != null, "up from a nested archive: {s}", .{m.addressText(&ab)});
-    try m.up();
+    try guiDone(t, &m, m.up());
     try t.must(eqlS(guiChosen(&m), "outer.7z") and std.mem.find(u8, try guiNames(t, &m), "|alpha") != null, "up from the outer archive: {s}", .{guiChosen(&m)});
     try guiOpen(t, &m, "pack.zip");
     m.flat = true;
@@ -1860,18 +1863,30 @@ fn guiCell(t: *T, m: *const mw.Model, name: []const u8, c: mw.Col) ![]const u8 {
 /// MainForm.Open(name): Enter on that row; an archived file goes through a temp dir first (ToTemp, no window).
 fn guiOpen(t: *T, m: *mw.Model, name: []const u8) !void {
     for (m.rows.items, 0..) |r, i| if (eqlS(r.name, name)) {
-        switch (try m.activate(i, false)) {
+        switch (m.activate(i, false) catch |e| return guiDone(t, m, e)) {
             .extract => |x| {
                 const rel = try t.ar.dupe(u8, x.rel);
                 const dir = try m.toTempSync(x.index);
                 defer t.gpa.free(dir);
-                _ = try m.afterTemp(dir, rel, x.as_archive);
+                _ = m.afterTemp(dir, rel, x.as_archive) catch |e| return guiDone(t, m, e);
             },
             else => {},
         }
         return;
     };
     try t.must(false, "no row {s}", .{name});
+}
+
+/// The window's error.NeedOpen (Dialogs.openArchive on a job, then goWith), here without one: open, then goWith.
+fn guiDone(t: *T, m: *mw.Model, r: anyerror!void) !void {
+    r catch |e| {
+        if (e != error.NeedOpen) return e;
+        var want = m.want.?;
+        m.want = null;
+        defer want.saved.deinit();
+        const a = try engine.open(t.gpa, t.io, want.saved.loc.path, want.saved.loc.password, .none, null);
+        try m.goWith(want.saved.loc, a, want.select, want.record);
+    };
 }
 
 test "contract compiles" {

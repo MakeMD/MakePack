@@ -624,7 +624,7 @@ pub const Compress = struct {
         im.ImGui_PopStyleColor();
         if (f.volumeSize() == null) {
             im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Text, kit.app.color(d.ctx.app.cfg.palette.danger, 1));
-            D.textItem(S.badVolumeSize.get(), "compress_volume_error", (left + right) * s);
+            kit.ui.text("compress_volume_error", S.badVolumeSize.get(), null, (left + right) * s);
             im.ImGui_PopStyleColor();
         }
 

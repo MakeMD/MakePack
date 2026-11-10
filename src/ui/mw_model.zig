@@ -1,10 +1,10 @@
 //! MP-G1: the main window's state without any drawing (MainForm.cs: locations, rows, history, nested archives,
 //! folder sizes, the status / address / title texts, selection). main_window.zig draws it and turns its Actions
 //! into dialogs; the selftest "gui" check drives it directly (no window, no dialogs).
-//! Every navigation goes through `goWith`: it copies the target first (a Loc may point into the model itself),
-//! opens an archive straight through the engine and, when that fails (password, not an archive, damaged...),
-//! leaves the target in `want` and returns error.NeedOpen: the window hands it to Dialogs.openArchive, whose
-//! alerts and prompts say what is wrong, and comes back with `goWith(want, opened)`.
+//! Every navigation goes through `goWith`: it copies the target first (a Loc may point into the model itself).
+//! An archive that is not open yet is never opened here (the UI thread would hang on a big one): the target goes
+//! to `want` with error.NeedOpen, the window hands it to Dialogs.openArchive (a job with progress and Cancel; its
+//! alerts and prompts say what is wrong) and comes back with `goWith(want, opened)`.
 const std = @import("std");
 const kit = @import("kit");
 const engine = @import("../core/engine.zig");
@@ -128,7 +128,8 @@ pub const Model = struct {
     /// error.NeedOpen / error.NotFound: the target that could not be shown, its select and record.
     want: ?Want = null,
 
-    pub const Want = struct { saved: Saved, select: ?[]u8, record: bool };
+    /// `status`: the status line once it is shown (an edit's "Deleted 3 files"), in saved's arena.
+    pub const Want = struct { saved: Saved, select: ?[]u8, record: bool, status: ?[]const u8 = null };
 
     pub const disk_cols = [_]Col{ .name, .size, .type, .modified };
     pub const arc_cols = [_]Col{ .name, .size, .@"packed", .type, .modified, .crc };
@@ -193,8 +194,8 @@ pub const Model = struct {
         return m.goWith(to, null, select, record);
     }
 
-    /// MainForm.Go: shows `to`, opening its archive when it is not the one already open. `opened` = the archive
-    /// Dialogs.openArchive produced for it (taken over, also on failure). Nothing changes on an error.
+    /// MainForm.Go: shows `to`. An archive that is not the open one needs `opened` (from Dialogs.openArchive; taken
+    /// over, also on failure), else error.NeedOpen. Nothing changes on an error.
     pub fn goWith(m: *Model, to: Loc, opened: ?*engine.Archive, select: ?[]const u8, record: bool) Error!void {
         var t = Saved.init(m.gpa, to) catch |e| {
             if (opened) |a| a.close();
@@ -223,11 +224,9 @@ pub const Model = struct {
             if (opened) |a| {
                 try m.adopt(a, l);
             } else if (m.a == null or !engine.samePath(m.a.?.source, l.path)) {
-                const a = engine.open(m.gpa, m.io, l.path, l.password, null) catch {
-                    try m.setWant(l, sel, record);
-                    return error.NeedOpen;
-                };
-                try m.adopt(a, l);
+                // never on the UI thread: Dialogs.openArchive opens it on a job (progress, Cancel), then goWith
+                try m.setWant(l, sel, record);
+                return error.NeedOpen;
             }
             const inner = l.inner.?;
             var cur: []const u8 = if (inner.len == 0 or std.mem.endsWith(u8, inner, "/")) inner else try std.mem.concat(t.arena.allocator(), u8, &.{ inner, "/" });
@@ -389,7 +388,8 @@ pub const Model = struct {
         defer loc.deinit();
         var h = try Saved.init(m.gpa, m.here());
         m.go(loc.loc, null, false) catch |e| {
-            h.deinit();
+            // NeedOpen: the open finishes the step (goWith from the window), so here is remembered now
+            if (e == error.NeedOpen) to.append(m.gpa, h) catch h.deinit() else h.deinit();
             return e;
         };
         to.append(m.gpa, h) catch h.deinit();

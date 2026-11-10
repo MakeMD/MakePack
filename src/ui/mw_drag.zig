@@ -11,7 +11,6 @@ const kit = @import("kit");
 const shell = @import("mw_shell.zig");
 
 const w = kit.w;
-const Allocator = std.mem.Allocator;
 /// The COM objects outlive DoDragDrop when a target keeps a reference: heap, freed at refcount 0.
 const heap = std.heap.smp_allocator;
 

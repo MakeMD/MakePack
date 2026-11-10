@@ -42,6 +42,8 @@ pub const Assoc = struct {
     quick_kinds: [engine.kinds.len]engine.ArchiveKind = undefined,
     quick_n: usize = 0,
     quick: usize = 0,
+    /// Everything but the table, measured last frame (logical px * scale): the table shrinks so it all fits.
+    rest_h: f32 = 0,
 
     pub fn title(_: *Assoc, _: []u8) []const u8 {
         return S.assocTitle.get();
@@ -61,8 +63,12 @@ pub const Assoc = struct {
             r.checked = false;
         };
 
+        // The table gives up height so the dialog fits the main window (900x600 by default): the footer stays put.
+        var table_h = 330 * s;
+        if (d.ctx.has_main_window and f.rest_h > 0)
+            table_h = std.math.clamp(im.ImGui_GetMainViewport().*.WorkSize.y * 0.94 - f.rest_h, 96 * s, table_h);
         const flags = im.ImGuiTableFlags_Borders | im.ImGuiTableFlags_RowBg | im.ImGuiTableFlags_ScrollY | im.ImGuiTableFlags_SizingFixedFit;
-        if (im.ImGui_BeginTableEx("##assoc_table", 2, flags, .{ .x = 500 * s, .y = 330 * s }, 0)) {
+        if (im.ImGui_BeginTableEx("##assoc_table", 2, flags, .{ .x = 500 * s, .y = table_h }, 0)) {
             im.ImGui_TableSetupScrollFreeze(0, 1);
             im.ImGui_TableSetupColumnEx(S.extension.get(), im.ImGuiTableColumnFlags_WidthFixed, 140 * s, 0);
             im.ImGui_TableSetupColumnEx(S.currentApp.get(), im.ImGuiTableColumnFlags_WidthStretch, 0, 0);
@@ -75,7 +81,7 @@ pub const Assoc = struct {
                 _ = im.ImGui_Checkbox(l.ptr, &r.checked);
                 _ = im.ImGui_TableNextColumn();
                 var ib: [64]u8 = undefined;
-                D.textItem(r.owner, std.mem.print(&ib, "assoc_owner_{s}", .{r.ext}) catch "assoc_owner", 0);
+                kit.ui.text(std.mem.print(&ib, "assoc_owner_{s}", .{r.ext}) catch "assoc_owner", r.owner, null, 0);
             }
             im.ImGui_EndTable();
         }
@@ -94,17 +100,16 @@ pub const Assoc = struct {
         _ = D.combo("assoc_quick", f.quick_names[0..f.quick_n], &f.quick, 120);
 
         im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Text, im.ImGui_GetStyle().*.Colors[im.ImGuiCol_TextDisabled]);
-        D.textItem(S.assocNote.get(), "assoc_note", 500 * s);
+        kit.ui.text("assoc_note", S.assocNote.get(), null, 500 * s);
         im.ImGui_PopStyleColor();
 
         D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-        if (D.button(S.ok.get(), "assoc_ok") or D.enterPressed()) {
-            f.apply(d);
-            return false;
-        }
+        const ok = D.button(S.ok.get(), "assoc_ok") or D.enterPressed();
         im.ImGui_SameLine();
-        if (D.button(S.cancel.get(), "assoc_cancel") or D.escPressed()) return false;
-        return true;
+        const cancel = D.button(S.cancel.get(), "assoc_cancel") or D.escPressed();
+        f.rest_h = im.ImGui_GetCursorPosY() + im.ImGui_GetStyle().*.WindowPadding.y - table_h;
+        if (ok) f.apply(d);
+        return !ok and !cancel;
     }
 
     fn menuBox(f: *Assoc, i: usize) void {

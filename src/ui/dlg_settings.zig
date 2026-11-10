@@ -58,7 +58,7 @@ pub const Settings = struct {
             }
         }
         im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Text, im.ImGui_GetStyle().*.Colors[im.ImGuiCol_TextDisabled]);
-        D.textItem(S.archiveFolderNote.get(), "settings_note", 496 * s);
+        kit.ui.text("settings_note", S.archiveFolderNote.get(), null, 496 * s);
         im.ImGui_PopStyleColor();
 
         // What extracted files inherit from a downloaded archive (Windows' "this came from the Internet" mark).

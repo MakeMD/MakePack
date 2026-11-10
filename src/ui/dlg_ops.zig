@@ -17,11 +17,6 @@ const Reply = P.Reply;
 const Allocator = std.mem.Allocator;
 const fspath = std.Io.Dir.path;
 
-fn freeList(gpa: Allocator, list: []const []u8) void {
-    for (list) |s| gpa.free(s);
-    gpa.free(list);
-}
-
 fn dupeList(gpa: Allocator, list: []const []const u8) ![][]u8 {
     const out = try gpa.alloc([]u8, list.len);
     for (list, 0..) |s, i| out[i] = gpa.dupe(u8, s) catch {
@@ -300,7 +295,7 @@ const TestTask = struct {
         t.closeOwned();
         t.o.deinit(d);
         t.reply.reset(d.ctx.gpa);
-        freeList(d.ctx.gpa, t.files);
+        kit.win.freeList(d.ctx.gpa, t.files);
         d.ctx.gpa.destroy(t);
     }
 };
@@ -371,7 +366,7 @@ const RecycleTask = struct {
     pub fn deinit(t: *RecycleTask, d: *Dialogs) void {
         t.run.deinit();
         t.reply.reset(d.ctx.gpa);
-        freeList(d.ctx.gpa, t.paths);
+        kit.win.freeList(d.ctx.gpa, t.paths);
         d.ctx.gpa.destroy(t);
     }
 };
@@ -498,7 +493,7 @@ const EditTask = struct {
         gpa.free(t.from);
         gpa.free(t.to);
         gpa.free(t.new_name);
-        freeList(gpa, t.files);
+        kit.win.freeList(gpa, t.files);
         gpa.free(t.cur);
         gpa.free(t.source);
         if (t.password) |p| {
@@ -553,7 +548,7 @@ const OfferTask = struct {
 
     pub fn deinit(t: *OfferTask, d: *Dialogs) void {
         t.reply.reset(d.ctx.gpa);
-        freeList(d.ctx.gpa, t.files);
+        kit.win.freeList(d.ctx.gpa, t.files);
         d.ctx.gpa.destroy(t);
     }
 };

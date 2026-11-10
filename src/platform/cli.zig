@@ -440,7 +440,7 @@ fn openArchive(env: Env, eng: *Engine, a: Allocator, path: []const u8, ask: bool
     }
     try eng.start(env, a);
     const password = try passwordFor(env, a, path, engine.probe(env.io, path), ask);
-    return engine.open(env.gpa, env.io, path, password, diag) catch |e| {
+    return engine.open(env.gpa, env.io, path, password, .none, diag) catch |e| {
         if (e != error.Canceled and engine.canEncryptHeaders(env.io, path)) {
             diag.len = 0;
             return if (password == null) error.PasswordNeeded else error.WrongPassword;

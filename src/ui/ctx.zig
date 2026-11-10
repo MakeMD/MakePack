@@ -125,7 +125,7 @@ pub const Ctx = struct {
     /// Skipped under MakeKit automation: a test must never steal the user's focus.
     pub fn raise(c: *Ctx) void {
         const w = kit.w;
-        if (kit.win.getEnv(c.gpa, "MAKEKIT_AUTOMATION") catch null) |v| return c.gpa.free(v);
+        if (kit.automation.active) return;
         if (w.IsIconic(c.app.hwnd) != 0) _ = w.ShowWindow(c.app.hwnd, w.SW_RESTORE);
         _ = w.SetForegroundWindow(c.app.hwnd);
     }

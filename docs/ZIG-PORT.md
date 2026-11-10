@@ -144,7 +144,6 @@ The full contract is the module doc + doc comments of those three files; the ess
   --addmenu` verbs via `cli.Env.hive`, the GUI via `ctx.hive`, Heal; main.zig `testHive`, older name
   `MAKEPACK_HIVE`), `MAKEKIT_AUTOMATION=1`, `MAKEKIT_DISPLAY=\\.\DISPLAY1`; click by `##id`; `ctx.raise()` does
   nothing under automation.
-- main.zig's `comptime` block type-checks every stubbed entry point; delete it when G1/G2 call them all.
 - Boot check (2026-11-10, automation): no args -> main window with `###mfile`..`###mhelp`; a second process forwards
   and exits 0, one process; `quit` exit 0; `x`, `--assoc`, `--settings` exit at once with the stub dialogs.
 
@@ -172,21 +171,34 @@ The full contract is the module doc + doc comments of those three files; the ess
   assertions; registry cases under MAKEPACK_REGROOT); `guismoke.ps1` / `settingstest.ps1` use automation;
   `dragtest.ps1` is manual-only (real SendInput); `build.ps1` = zig build ReleaseSafe -> `dist\app` -> build_shell
   -> ISCC (`-NoSign` passes through); `publish.ps1`, `bom.ps1`, `invoke_btn.ps1` (.NET/UIA only) removed.
+- Kit adoption (2026-11-10): `sevenzip.InArchive.open(gpa, path, password, cancel)` and `engine.open(gpa, io, path,
+  password, progress, diag)` stop on the cancel flag (open callback, nested unpack, .001 glue): the GUI's open job
+  joins on Cancel instead of orphaning the work (`Dialogs.orphans` gone). `engine.openWarning(props)` = the text for
+  kpidErrorFlags / kpidWarningFlags (truncated, bad headers, data after the end); every GUI open alerts with it.
+  `engine.sweepStaleTemps` (GUI startup, own thread): `%TEMP%\MakePack\<hash>` untouched for a day and not in use.
+  engine/sevenzip long paths = `kit.win.longPathW`; `engine.fileExists/dirExists` = `kit.win.isFile/isDir`.
+- GUI (2026-11-10): `Model.goWith` never opens an archive (always `NeedOpen` -> `Dialogs.openArchive` on a job, also
+  for Back/Forward, "..", nested archives and `.reopen`, whose status line rides in `Model.Want.status`; the folder
+  shows while it opens). `D.textItem` -> `kit.ui.text` (same `text##id` labels, `value` = the full text);
+  `D.combo` = ImGui `BeginCombo` (automation: `##<id>` with `value` = the current item, rows `<item>##<id>_<n>`);
+  `Dialogs.isOpen` and main.zig's stub-check `comptime` block removed; `zig build test` runs the ui files' tests.
+- Tooling (2026-11-10): the milestone scripts `gui_g1fix.ps1`, `gui_g2fix.ps1`, `gui_dialogs.ps1` are folded into
+  `bugtest.ps1` (what bugtest lacked became cases 22-31: layout, Test's password, damaged 7z header, viewer states,
+  Esc on a drop-down, open Cancel, compress guards, Find in an archive, password windows, Assoc footer; the
+  queue's conflict question now runs as `readonly_target_overwrite` instead of a SKIP). Combo values are read from
+  the item's `value` (`Value-Of`); screenshots go through `Save-AutoScreenshot -Png`.
 
 ## Open items
 - **GUI phase**: MP-G1 / MP-G2 delivered (see their reports); `tools/bugtest.ps1` runs all cases on the Zig app.
-  Not automated: drag-and-drop (`tools/dragtest.ps1`, manual), OS file dialogs, input box values (the tests read
-  them back through files / saved profiles instead).
-- Tests killed mid-run leave engine temp folders in `%TEMP%\MakePack\<hash>` (the app removes them on a normal exit).
+  Not automated: drag-and-drop (`tools/dragtest.ps1`, manual), OS file dialogs.
 - Error text: `engine.friendly` falls back to the Zig error name (AccessDenied, FileBusy, NoSpaceLeft, ...) where C#
   showed the localized Windows message. Map via FormatMessageW or a table of S strings.
-- Long paths: engine file helpers rely on the manifest's longPathAware (needs HKLM LongPathsEnabled=1, off on stock
-  Windows); only sevenzip.zig adds `\\?\`. recycle() (SHFileOperationW) cannot take `\\?\` at all.
+- Long paths: recycle() (SHFileOperationW) cannot take `\\?\` at all (every other file helper adds it).
 - Case folding: engine buildDict/append conflict maps and the report sort fold ASCII only, so Cyrillic names that
   differ only in case are not seen as conflicts (C#: OrdinalIgnoreCase).
 - Extracted folders get no mtime/attributes (C# restored them). CON/AUX device names get no special handling.
 - sevenzip: no last-resort open pass (signature-less handlers under a foreign extension, zip/rar SFX = PE);
-  truncated zip/tar/gz open with S_OK (kpidErrorFlags warnings not read - parity with SevenZipSharp); extract()
+  a truncated .gz opens clean (its end is only seen when decoding: Test reports it); extract()
   does not dedupe indices; multi-volume RAR / .z01 through IArchiveOpenVolumeCallback untested.
 - Data-loss windows kept from C#: convert recycles the source before the final move (a failed move leaves only the
   Recycle Bin copy); convert target==source without delete_original replaces in place; an in-place edit drops the
@@ -198,6 +210,3 @@ The full contract is the module doc + doc comments of those three files; the ess
   C# had the same).
 - Shell: not run in a real Explorer (sparse package install forbidden in tests); no panic containment inside the
   host; `dir()` ignores a GetModuleHandleExW failure; 64 KB arena per launch (grows with huge selections).
-- Docs: legacy/shell/CMakeLists.txt not rebuilt (README's build section describes the Zig build since MP-T).
-- MakeKit: `third_party/imgui/VERSION` shadows libc++'s `<version>`; build.zig works around it with
-  `-idirafter` until MakeKit renames the file.

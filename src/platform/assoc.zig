@@ -329,12 +329,6 @@ fn shellNew(c: Ctx, on: bool) !void {
 // ---- ProgID ------------------------------------------------------------------------------------------
 
 /// Assoc.RegisterProgId: idempotent; always rewrites the exe path (the app may have been moved or reinstalled).
-pub fn registerProgId(h: Hive) !void {
-    var s = Scratch.init();
-    defer s.deinit();
-    return registerProgIdC(s.ctx(h));
-}
-
 fn registerProgIdC(c: Ctx) !void {
     const p = classes ++ prog_id;
     const exe = try pw.exePath(c.a);

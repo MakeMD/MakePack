@@ -223,18 +223,30 @@ pub const MainWindow = struct {
             .replace_archive => |r| mw.m.replace(r.old, r.new),
             .reopen => |o| {
                 // Modify: Go(Loc(source, cur, password), select, record: false); when that fails, the folder.
-                if (mw.m.go(.{ .path = o.source, .inner = o.cur, .password = o.password }, o.select, false)) {
-                    if (o.status) |s| mw.m.setMessage(s);
-                } else |_| {
-                    mw.m.clearWant();
+                // The edit closed the archive, so it is opened again on a job (NeedOpen); its folder shows
+                // meanwhile, which is also what stays when that open fails or is cancelled.
+                mw.m.go(.{ .path = o.source, .inner = o.cur, .password = o.password }, o.select, false) catch |e| {
+                    var want = mw.m.want;
+                    mw.m.want = null;
                     mw.nav(mw.m.go(.{ .path = mw.m.dir }, null, false));
-                }
+                    if (e != error.NeedOpen or want == null) {
+                        if (want) |*x| x.saved.deinit();
+                        return;
+                    }
+                    if (o.status) |s| want.?.status = want.?.saved.arena.allocator().dupe(u8, s) catch null;
+                    mw.m.clearWant();
+                    mw.m.want = want;
+                    return mw.navError(e);
+                };
+                if (o.status) |s| mw.m.setMessage(s);
             },
             .opened => |o| {
                 var p = mw.pending.fetchRemove(o.token) orelse return o.archive.close();
                 if (p.value == .go) {
                     const want = p.value.go;
-                    mw.nav(mw.m.goWith(want.saved.loc, o.archive, want.select, want.record));
+                    if (mw.m.goWith(want.saved.loc, o.archive, want.select, want.record)) {
+                        if (want.status) |s| mw.m.setMessage(s);
+                    } else |e| mw.navError(e);
                 } else o.archive.close();
                 p.value.deinit(gpa);
             },

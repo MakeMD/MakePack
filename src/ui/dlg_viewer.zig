@@ -6,7 +6,7 @@ const kit = @import("kit");
 const D = @import("dialogs.zig");
 const C = @import("ctx.zig");
 const P = @import("dlg_prompt.zig");
-const info_dlg = @import("dlg_info.zig");
+const shell = @import("mw_shell.zig");
 
 const S = C.S;
 const engine = C.engine;
@@ -49,10 +49,7 @@ fn monoFont() ?*im.ImFont {
     var dir_buf: [600]u8 = undefined;
     const dir = dir_buf[0..std.unicode.wtf16LeToWtf8(&dir_buf, dir_w[0..n])];
     const p = std.mem.printSentinel(&buf, "{s}\\Fonts\\consola.ttf", .{dir}, 0) catch return null;
-    var pw: [800]u16 = undefined;
-    const pl = std.unicode.wtf8ToWtf16Le(&pw, p) catch return null;
-    pw[pl] = 0;
-    if (w.GetFileAttributesW(@ptrCast(&pw)) == w.INVALID_FILE_ATTRIBUTES) return null; // ImGui asserts on a missing file
+    if (!kit.win.isFile(p)) return null; // ImGui asserts on a missing file
     mono = im.ImFontAtlas_AddFontFromFileTTF(im.ImGui_GetIO().*.Fonts, p.ptr, 16, null, null);
     return mono;
 }
@@ -282,7 +279,7 @@ pub const Viewer = struct {
         const a: usize = @intCast(@max(0, v.sel[0]));
         const b: usize = @intCast(@min(@as(c_int, @intCast(v.text.len)), v.sel[1]));
         if (b <= a) return;
-        info_dlg.toClipboard(v.gpa, D.owner(d), v.text[a..b]);
+        _ = shell.setText(v.gpa, D.owner(d), v.text[a..b]);
     }
 
     fn selectAll(v: *Viewer) void {

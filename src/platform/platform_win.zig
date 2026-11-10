@@ -6,26 +6,9 @@ const w = kit.w;
 
 const Allocator = std.mem.Allocator;
 
-fn attributes(path: []const u8) ?u32 {
-    var buf: [8192]u8 = undefined; // most paths; a longer one (up to 32k characters) goes to the heap
-    var bfa = std.heap.BufferFirstAllocator.init(&buf, std.heap.page_allocator);
-    const p = kit.win.toW(bfa.allocator(), path) catch return null;
-    defer bfa.allocator().free(p);
-    const a = w.GetFileAttributesW(p.ptr);
-    return if (a == w.INVALID_FILE_ATTRIBUTES) null else a;
-}
-
-/// File.Exists: a file (not a folder) is there. Any failure (bad path, no access) = false.
-pub fn fileExists(path: []const u8) bool {
-    const a = attributes(path) orelse return false;
-    return a & w.FILE_ATTRIBUTE_DIRECTORY == 0;
-}
-
-/// Directory.Exists
-pub fn dirExists(path: []const u8) bool {
-    const a = attributes(path) orelse return false;
-    return a & w.FILE_ATTRIBUTE_DIRECTORY != 0;
-}
+/// File.Exists / Directory.Exists (any failure = false; long paths too).
+pub const fileExists = kit.win.isFile;
+pub const dirExists = kit.win.isDir;
 
 /// Path.GetFullPath (GetFullPathNameW, like .NET on Windows): relative to the current directory.
 /// error.BadPath where .NET threw (empty string, embedded NUL).

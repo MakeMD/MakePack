@@ -14,7 +14,6 @@ param([Parameter(Mandatory)][string]$Out, [string]$Arg = '', [string[]]$Steps = 
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\..\MakeKit\tools\imgui-auto.ps1')
-Add-Type -AssemblyName System.Drawing
 
 # Old SendInput names -> ImGuiKey names (the automation 'key' command).
 $names = @{ enter = 'Enter'; esc = 'Escape'; back = 'Backspace'; tab = 'Tab'; space = 'Space'; del = 'Delete'; ins = 'Insert'
@@ -47,10 +46,7 @@ try {
         }
         Start-Sleep -Milliseconds $WaitMs
         $null = Invoke-AutoFrames $app 3
-        $bmp = Save-AutoScreenshot $app "$Out`_$n.bmp"
-        $img = [System.Drawing.Image]::FromFile($bmp)
-        try { $img.Save("$Out`_$n.png", [System.Drawing.Imaging.ImageFormat]::Png) } finally { $img.Dispose() }
-        Remove-Item -LiteralPath $bmp
+        $null = Save-AutoScreenshot $app "$Out`_$n.png" -Png
         $lines = @(Get-AutoItems $app -Windows | ForEach-Object { 'window ' + $_.name }) +
                  @(Get-AutoItems $app | ForEach-Object { '{0}  [{1}{2}{3}]' -f $_.label, $(if ($_.visible) { 'v' } else { '-' }), $(if ($_.disabled) { 'd' } else { '' }), $(if ($_.checked) { 'x' } else { '' }) })
         [IO.File]::WriteAllLines("$Out`_$n.txt", [string[]]$lines, (New-Object System.Text.UTF8Encoding($false)))

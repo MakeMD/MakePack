@@ -4,7 +4,7 @@
 //! # API (what Engine builds on)
 //!
 //!   try sevenzip.load(dll_path);                       // once per process, idempotent, thread-safe
-//!   const a = try InArchive.open(gpa, path, password);  // detects the format like 7-Zip; reads every item
+//!   const a = try InArchive.open(gpa, path, password, cancel_flag_or_null); // detects the format like 7-Zip
 //!   defer a.close();      // password prompt = the caller's loop (C# PasswordForm): PasswordNeeded / WrongPassword
 //!                         // -> ask -> open again; extract/check/update use the same password for the bodies
 //!   a.items[i]     // index == i: path (UTF-8, '\' as 7z.dll reports it), is_dir, size, packed_size, mtime,
@@ -319,7 +319,8 @@ pub const InArchive = struct {
     /// Opens any format 7z.dll knows, detected by signature like 7-Zip does: handlers whose signature matches
     /// first; for an exe (MZ) the 7z handler searching the first 4 MB (a 7z SFX) before PE; then handlers
     /// whose extension matches. `password` answers the open callback (encrypted headers) and is kept for the bodies.
-    pub fn open(gpa: Allocator, path: []const u8, password: ?[]const u8) Error!*InArchive {
+    /// `cancel` set (any thread) stops it at the handler's next progress call: error.Canceled.
+    pub fn open(gpa: Allocator, path: []const u8, password: ?[]const u8, cancel: ?*const std.atomic.Value(bool)) Error!*InArchive {
         const d = dll orelse return error.DllLoadFailed;
         const a = try gpa.create(InArchive);
         a.* = .{ .gpa = gpa, .items = &.{}, .props = undefined, .password = null, .arena = .init(gpa), .x = undefined, .stream = undefined, .handler = undefined };
@@ -357,7 +358,7 @@ pub const InArchive = struct {
 
         for (cands.items) |c| {
             const f = &d.formats[c.f];
-            const cb = try OpenCallback.create(gpa, own_path, a.password);
+            const cb = try OpenCallback.create(gpa, own_path, a.password, cancel);
             defer cb.unref();
             const x: *InArchiveCom = @ptrCast(@alignCast(try newObject(f, &IID.in_archive)));
             var seek_to: u64 = 0;
@@ -368,6 +369,7 @@ pub const InArchive = struct {
             if (h != S_OK) {
                 _ = x.vt.close(x);
                 _ = x.vt.release(x);
+                if (cancel != null and cancel.?.load(.acquire)) return error.Canceled;
                 if (asked) return if (a.password == null) error.PasswordNeeded else error.WrongPassword;
                 if (h == E_ABORT) return error.Canceled;
                 continue;
@@ -771,18 +773,7 @@ fn toW(gpa: Allocator, s: []const u8) Error![:0]u16 {
 /// A file path for Win32: long ones (>= 248 UTF-16 units) made absolute and prefixed \\?\ (\\?\UNC\ for shares),
 /// so CreateFileW & co take them past MAX_PATH (.NET did this for the C# version).
 fn toPathW(gpa: Allocator, path: []const u8) Error![:0]u16 {
-    const wp = try toW(gpa, path);
-    const L = std.unicode.utf8ToUtf16LeStringLiteral;
-    if (wp.len < 248 or std.mem.startsWith(u16, wp, L("\\\\?\\"))) return wp;
-    defer gpa.free(wp);
-    const n = w.GetFullPathNameW(wp.ptr, 0, null, null);
-    if (n == 0) return winError(w.GetLastError());
-    const full = try gpa.alloc(u16, n);
-    defer gpa.free(full);
-    const len = w.GetFullPathNameW(wp.ptr, n, full.ptr, null);
-    if (len == 0 or len >= n) return winError(w.GetLastError());
-    const unc = std.mem.startsWith(u16, full[0..len], L("\\\\"));
-    return std.mem.concatWithSentinel(gpa, u16, &.{ if (unc) L("\\\\?\\UNC") else L("\\\\?\\"), full[@intFromBool(unc)..len] }, 0);
+    return kit.win.longPathW(gpa, path) catch |e| if (e == error.OutOfMemory) error.OutOfMemory else hrError(E_INVALIDARG);
 }
 
 const BSTR = ?[*:0]u16;
@@ -1249,17 +1240,18 @@ const OpenCallback = struct {
     gpa: Allocator,
     path: []const u8,
     password: ?[]const u8,
+    cancel: ?*const std.atomic.Value(bool),
     asked: bool = false,
 
     const interfaces = .{ .{ IID_IUnknown, "cb" }, .{ IID.open_callback, "cb" }, .{ IID.get_password, "pw" }, .{ IID.open_volume_callback, "vol" } };
-    const cb_vt: OpenCallbackVt = .{ .qi = Unknown(OpenCallback, "cb").qi, .add_ref = Unknown(OpenCallback, "cb").addRef, .release = Unknown(OpenCallback, "cb").release, .set_total = nop, .set_completed = nop };
+    const cb_vt: OpenCallbackVt = .{ .qi = Unknown(OpenCallback, "cb").qi, .add_ref = Unknown(OpenCallback, "cb").addRef, .release = Unknown(OpenCallback, "cb").release, .set_total = nop, .set_completed = completed };
     const pw_vt: PasswordVt = .{ .qi = Unknown(OpenCallback, "pw").qi, .add_ref = Unknown(OpenCallback, "pw").addRef, .release = Unknown(OpenCallback, "pw").release, .get = getPassword };
     const vol_vt: OpenVolumeVt = .{ .qi = Unknown(OpenCallback, "vol").qi, .add_ref = Unknown(OpenCallback, "vol").addRef, .release = Unknown(OpenCallback, "vol").release, .get_property = volumeProperty, .get_stream = volumeStream };
 
     /// `path` and `password` must outlive the archive (InArchive owns them).
-    fn create(gpa: Allocator, path: []const u8, password: ?[]const u8) error{OutOfMemory}!*OpenCallback {
+    fn create(gpa: Allocator, path: []const u8, password: ?[]const u8, cancel: ?*const std.atomic.Value(bool)) error{OutOfMemory}!*OpenCallback {
         const s = try gpa.create(OpenCallback);
-        s.* = .{ .cb = .{ .vt = &cb_vt }, .pw = .{ .vt = &pw_vt }, .vol = .{ .vt = &vol_vt }, .refs = .init(1), .gpa = gpa, .path = path, .password = password };
+        s.* = .{ .cb = .{ .vt = &cb_vt }, .pw = .{ .vt = &pw_vt }, .vol = .{ .vt = &vol_vt }, .refs = .init(1), .gpa = gpa, .path = path, .password = password, .cancel = cancel };
         return s;
     }
 
@@ -1273,6 +1265,11 @@ const OpenCallback = struct {
 
     fn nop(_: This, _: ?*const u64, _: ?*const u64) callconv(.winapi) HRESULT {
         return S_OK;
+    }
+
+    fn completed(this: This, _: ?*const u64, _: ?*const u64) callconv(.winapi) HRESULT {
+        const c = Unknown(OpenCallback, "cb").self(this).cancel orelse return S_OK;
+        return if (c.load(.acquire)) E_ABORT else S_OK;
     }
 
     fn getPassword(this: This, out: *BSTR) callconv(.winapi) HRESULT {

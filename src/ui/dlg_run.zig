@@ -217,8 +217,7 @@ pub const Run = struct {
             .idle, .done => return null,
             .running => {
                 r.asker.tick(r.d);
-                if (!r.job.isFinished()) return null;
-                r.job.join();
+                if (!r.job.takeFinished()) return null;
                 if (r.shown) r.d.dropWin(r);
                 r.shown = false;
                 if (r.err) |e| {
@@ -300,7 +299,7 @@ pub const Run = struct {
         var ib: [64]u8 = undefined;
         const status_id = std.mem.print(&ib, "{s}_status", .{r.id}) catch "progress_status";
         var fb: [700]u8 = undefined;
-        D.textItem(fit(label, 436 * s, &fb), status_id, 0);
+        kit.ui.text(status_id, fit(label, 436 * s, &fb), null, 0);
         const pct: u32 = @intFromFloat(@round(r.job.progress() * 100));
         var ob: [16]u8 = undefined;
         const overlay = std.mem.printSentinel(&ob, "{d}%", .{pct}, 0) catch "";
@@ -341,148 +340,103 @@ fn fit(text: []const u8, width: f32, buf: []u8) []const u8 {
 
 // ---- engine.open on a job ------------------------------------------------------------------------------------
 
-/// The open itself, on its own heap object so a cancelled one can outlive its owner (Dialogs.orphans).
-// ponytail: engine.open has no cancel (OpenCallback.SetCompleted is a no-op, the nested .tar.gz unpack takes no
-// Progress), so Cancel abandons the work instead of stopping it, and the exit waits for it (Dialogs.deinit,
-// window already gone): killed mid-way it would leave the half-written inner .tar in %TEMP%\MakePack.
-// Upgrade: a cancel flag in engine.open, then join on Cancel.
-pub const OpenWork = struct {
-    job: kit.jobs.Job = .{},
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    path: []u8,
-    password: ?[]u8,
-    result: ?*engine.Archive = null,
-    err: ?anyerror = null,
-    diag: engine.Diag = .{},
-    err_text: [1536]u8 = undefined,
-    err_len: usize = 0,
-
-    fn run(job: *kit.jobs.Job) anyerror!void {
-        const x: *OpenWork = @fieldParentPtr("job", job);
-        x.result = engine.open(x.gpa, x.io, x.path, x.password, &x.diag) catch |e| {
-            x.err = e;
-            const t = engine.friendly(e, &x.diag);
-            const n = @min(t.len, x.err_text.len);
-            @memcpy(x.err_text[0..n], t[0..n]);
-            x.err_len = n;
-            return;
-        };
-    }
-
-    fn destroy(x: *OpenWork) void {
-        if (x.result) |a| a.close();
-        x.gpa.free(x.path);
-        if (x.password) |p| {
-            std.crypto.secureZero(u8, p);
-            x.gpa.free(p);
-        }
-        x.gpa.destroy(x);
-    }
-};
-
-/// Dialogs.draw: the abandoned opens that ended are joined, their archive closed. `wait` (Dialogs.deinit): all.
-pub fn sweepOrphans(d: *Dialogs, wait: bool) void {
-    var i: usize = 0;
-    while (i < d.orphans.items.len) {
-        const x = d.orphans.items[i];
-        if (!wait and !x.job.isFinished()) {
-            i += 1;
-            continue;
-        }
-        x.job.join();
-        _ = d.orphans.swapRemove(i);
-        x.destroy();
-    }
-}
-
 /// engine.open on a job + its progress window (after `show_after_ms`: a quick open shows nothing): the file name,
-/// an indeterminate bar, Cancel (also X and Esc) = `err` error.Canceled at once. Polled with `finished`.
+/// an indeterminate bar, Cancel (also X and Esc) = engine.open's cancel flag; the open stops at its next progress
+/// call and `err` becomes error.Canceled. Polled with `finished`. Must not move while running (a field of a heap
+/// object).
 pub const OpenJob = struct {
     pub const win_id = "opening";
     const show_after_ms = 300;
     d: *Dialogs = undefined,
-    x: ?*OpenWork = null,
+    job: kit.jobs.Job = .{},
+    running: bool = false,
+    path: []u8 = &.{},
+    password: ?[]u8 = null,
     t0: u64 = 0,
     shown: bool = false,
-    title_buf: [300]u8 = undefined,
-    title_len: usize = 0,
+    cancel_pressed: bool = false,
+    diag: engine.Diag = .{},
     result: ?*engine.Archive = null,
     err: ?anyerror = null,
     err_text: [1536]u8 = undefined,
     err_len: usize = 0,
 
-    /// Copies `path` / `password`.
+    /// Copies `path` / `password`. false = it could not start (`err`).
     pub fn start(o: *OpenJob, d: *Dialogs, path: []const u8, password: ?[]const u8) bool {
         o.d = d;
         o.result = null;
         o.err = null;
         o.err_len = 0;
-        o.shown = false;
-        const pa = d.ctx.gpa;
-        const x = pa.create(OpenWork) catch |e| return o.failStart(e);
-        x.* = .{ .gpa = pa, .io = d.ctx.io, .path = pa.dupe(u8, path) catch |e| {
-            pa.destroy(x);
-            return o.failStart(e);
-        }, .password = null };
-        if (password) |p| x.password = pa.dupe(u8, p) catch |e| {
-            x.destroy();
-            return o.failStart(e);
-        };
-        x.job.start(x, OpenWork.run) catch |e| {
-            x.destroy();
-            return o.failStart(e);
-        };
-        o.x = x;
+        o.diag = .{};
+        o.cancel_pressed = false;
+        o.freeArgs();
+        const gpa = d.ctx.gpa;
+        o.path = gpa.dupe(u8, path) catch |e| return o.failStart(e);
+        if (password) |p| o.password = gpa.dupe(u8, p) catch |e| return o.failStart(e);
+        o.job.start(o, run) catch |e| return o.failStart(e);
+        o.running = true;
         o.t0 = w.GetTickCount64();
-        const n = std.mem.print(&o.title_buf, "{s}", .{std.Io.Dir.path.basename(path)}) catch o.title_buf[0..0];
-        o.title_len = n.len;
         return true;
     }
 
     fn failStart(o: *OpenJob, e: anyerror) bool {
         o.err = e;
+        o.freeArgs();
         return false;
     }
 
-    /// true once finished (or cancelled: `err` = error.Canceled). Shows the progress window when it takes a while.
+    fn run(job: *kit.jobs.Job) anyerror!void {
+        const o: *OpenJob = @fieldParentPtr("job", job);
+        o.result = engine.open(o.d.ctx.gpa, o.d.ctx.io, o.path, o.password, .{ .cancel = &job.cancel_flag }, &o.diag) catch |e| {
+            o.err = e;
+            const t = engine.friendly(e, &o.diag); // threadlocal buffer: copy it here
+            const n = @min(t.len, o.err_text.len);
+            @memcpy(o.err_text[0..n], t[0..n]);
+            o.err_len = n;
+            return;
+        };
+    }
+
+    /// true once finished (`result`, or `err`: error.Canceled after Cancel). Shows the window when it takes a while.
     pub fn finished(o: *OpenJob) bool {
-        const x = o.x orelse return true;
-        if (!x.job.isFinished()) {
+        if (!o.running) return true;
+        if (!o.job.takeFinished()) {
             if (!o.shown and w.GetTickCount64() -% o.t0 >= show_after_ms) {
                 o.shown = true;
                 D.push(o.d, OpenJob, o, o.d.ctx.has_main_window);
             }
             return false;
         }
-        x.job.join();
-        o.x = null;
+        o.running = false;
         o.hide();
-        o.result = x.result;
-        x.result = null;
-        o.err = x.err;
-        o.err_len = x.err_len;
-        @memcpy(o.err_text[0..x.err_len], x.err_text[0..x.err_len]);
-        x.destroy();
+        o.freeArgs();
+        if (o.cancel_pressed) { // it finished before it saw the flag: the user still asked to stop
+            if (o.result) |a| a.close();
+            o.result = null;
+            o.err = error.Canceled;
+        }
         return true;
     }
 
-    /// Cancel: the work goes on as an orphan (swept by Dialogs when it ends); the caller sees error.Canceled now.
-    pub fn abandon(o: *OpenJob) void {
-        const x = o.x orelse return;
-        o.x = null;
-        o.hide();
-        o.err = error.Canceled;
-        o.err_len = 0;
-        o.d.orphans.append(o.d.ctx.gpa, x) catch {
-            x.job.join(); // no room to remember it: wait (rare; only under OOM)
-            x.destroy();
-        };
+    fn cancel(o: *OpenJob) void {
+        o.cancel_pressed = true;
+        o.job.cancel();
     }
 
     fn hide(o: *OpenJob) void {
         if (o.shown) o.d.dropWin(o);
         o.shown = false;
+    }
+
+    fn freeArgs(o: *OpenJob) void {
+        const gpa = if (o.path.len > 0 or o.password != null) o.d.ctx.gpa else return;
+        if (o.path.len > 0) gpa.free(o.path);
+        o.path = &.{};
+        if (o.password) |p| {
+            std.crypto.secureZero(u8, p);
+            gpa.free(p);
+        }
+        o.password = null;
     }
 
     /// Ended by Cancel.
@@ -495,36 +449,42 @@ pub const OpenJob = struct {
         return o.err_text[0..o.err_len];
     }
 
-    /// Teardown: a running open is abandoned (never waited for), an archive nobody took is closed.
+    /// Teardown: a running open is cancelled and waited for, an archive nobody took is closed.
     pub fn deinit(o: *OpenJob) void {
-        o.abandon();
+        if (o.running) {
+            o.job.cancel();
+            o.job.join();
+            o.running = false;
+        }
+        o.hide();
         if (o.result) |a| a.close();
         o.result = null;
+        o.freeArgs();
     }
 
     // ---- the window (Win; the OpenJob's owner owns it: dropWin, never deinit from the sweep) ----
 
     pub fn title(o: *OpenJob, _: []u8) []const u8 {
-        return o.title_buf[0..o.title_len];
+        return std.Io.Dir.path.basename(o.path);
     }
 
     pub fn body(o: *OpenJob, d: *Dialogs) bool {
         _ = d;
         const s = D.scale();
         var lb: [400]u8 = undefined;
-        const t = o.title_buf[0..o.title_len];
-        const label = std.mem.print(&lb, "{s}: {s}\u{2026}", .{ S.openCmd.get(), t }) catch t;
+        const name = std.Io.Dir.path.basename(o.path);
+        const label = std.mem.print(&lb, "{s}: {s}\u{2026}", .{ S.openCmd.get(), name }) catch name;
         var fb: [700]u8 = undefined;
-        D.textItem(fit(label, 436 * s, &fb), "opening_status", 0);
+        kit.ui.text("opening_status", fit(label, 436 * s, &fb), null, 0);
         im.ImGui_ProgressBar(-1.0 * @as(f32, @floatCast(im.ImGui_GetTime())), .{ .x = 436 * s, .y = 0 }, "");
         D.alignRight(&.{S.cancel.get()});
-        if (D.button(S.cancel.get(), "opening_cancel") or D.escPressed()) o.abandon();
+        if (D.buttonOn(!o.cancel_pressed, S.cancel.get(), "opening_cancel") or D.escPressed()) o.cancel();
         return true;
     }
 
-    /// X = Cancel.
+    /// X = Cancel (the window goes when the job has stopped).
     pub fn close(o: *OpenJob, _: *Dialogs) bool {
-        o.abandon();
+        o.cancel();
         return false;
     }
 
@@ -671,6 +631,8 @@ pub const Opener = struct {
                 if (o.oj.result) |a| {
                     o.oj.result = null;
                     o.archive = a;
+                    // opened, but partial (a truncated zip / tar): say so instead of a silently short list
+                    if (engine.openWarning(a.x.props)) |t| d.alert(.warning, a.display(), t.get());
                     o.done(0);
                     return true;
                 }

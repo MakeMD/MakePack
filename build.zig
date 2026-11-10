@@ -11,20 +11,6 @@ pub fn build(b: *std.Build) void {
     const kit_dep = b.dependency("makekit", .{ .target = target, .optimize = optimize });
     const kit = kit_dep.module("kit");
 
-    // TEMPORARY workaround for a MakeKit bug (reported, not ours to edit): third_party/imgui/VERSION shadows
-    // libc++'s <version> on the case-insensitive file system, so a clean build of the kit's imgui lib fails
-    // with "unknown type name 'Vendored'". -idirafter for that folder lets the standard header win; imgui's own
-    // includes still resolve. Delete this block once MakeKit renames the file.
-    for (kit_dep.artifact("imgui").root_module.include_dirs.items) |*dir| switch (dir.*) {
-        .path => |p| switch (p) {
-            .src_path => |sp| if (std.mem.eql(u8, std.Io.Dir.path.basename(sp.sub_path), "imgui")) {
-                dir.* = .{ .path_after = p };
-            },
-            else => {},
-        },
-        else => {},
-    };
-
     // Absolute paths of the bundled 7-Zip files for tests (the exe finds 7z.dll next to itself).
     // 7z.exe is the test oracle only; it is never installed.
     const paths = b.addOptions();

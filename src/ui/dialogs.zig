@@ -33,7 +33,6 @@ const std = @import("std");
 const kit = @import("kit");
 const C = @import("ctx.zig");
 const P = @import("dlg_prompt.zig");
-const R = @import("dlg_run.zig");
 const ops = @import("dlg_ops.zig");
 const compress_dlg = @import("dlg_compress.zig");
 const extract_dlg = @import("dlg_extract.zig");
@@ -160,8 +159,6 @@ pub const Dialogs = struct {
     add_form: ?*compress_dlg.Compress = null,
     queue: extract_dlg.Queue = .{},
     find_win: ?*find_dlg.Find = null,
-    /// Opens the user cancelled (engine.open cannot stop): swept when they end, the archive closed.
-    orphans: std.ArrayList(*R.OpenWork) = .empty,
     // OS window state (no main window)
     timer_on: bool = false,
     hidden_os: bool = false,
@@ -193,8 +190,6 @@ pub const Dialogs = struct {
         d.queue.deinit(d);
         d.wins.deinit(d.ctx.gpa);
         d.gather.deinit();
-        R.sweepOrphans(d, true); // a cancelled open still running: waited for (see R.OpenWork)
-        d.orphans.deinit(d.ctx.gpa);
         if (d.timer_on) _ = w.KillTimer(d.ctx.app.hwnd, timer_id);
     }
 
@@ -248,7 +243,6 @@ pub const Dialogs = struct {
         }
         d.drawWindows();
         d.sweep();
-        R.sweepOrphans(d, false);
         d.osWindow();
     }
 
@@ -467,12 +461,6 @@ pub const Dialogs = struct {
             x.closed = true;
             x.dropped = true;
         };
-    }
-
-    /// A modal (from the main window) or modeless window: the main window's dialogs are modal.
-    pub fn isOpen(d: *const Dialogs, ptr: *const anyopaque) bool {
-        for (d.wins.items) |x| if (x.ptr == ptr and !x.closed) return true;
-        return false;
     }
 
     fn gatherDue(d: *Dialogs) void {
@@ -749,22 +737,6 @@ pub fn noDots(s: []const u8) []const u8 {
     return if (std.mem.endsWith(u8, s, "\u{2026}")) s[0 .. s.len - 3] else s;
 }
 
-/// Text a test can read: drawn (wrapped at `wrap` px, 0 = no wrap), with an invisible item labelled "text##id" on it.
-pub fn textItem(text: []const u8, id: []const u8, wrap: f32) void {
-    const pos = im.ImGui_GetCursorScreenPos();
-    if (wrap > 0) im.ImGui_PushTextWrapPos(im.ImGui_GetCursorPosX() + wrap);
-    im.ImGui_TextUnformattedEx(text.ptr, text.ptr + text.len);
-    if (wrap > 0) im.ImGui_PopTextWrapPos();
-    const sz = im.ImGui_CalcTextSizeEx(text.ptr, text.ptr + text.len, false, if (wrap > 0) wrap else -1);
-    const after = im.ImGui_GetCursorScreenPos();
-    im.ImGui_SetCursorScreenPos(pos);
-    var buf: [2048]u8 = undefined;
-    const label = std.mem.printSentinel(&buf, "{s}##{s}", .{ text[0..@min(text.len, 1900)], id }, 0) catch "##text";
-    _ = im.ImGui_InvisibleButton(label.ptr, .{ .x = @max(1, sz.x), .y = @max(1, sz.y) }, 0);
-    im.ImGui_SetCursorScreenPos(after);
-    im.ImGui_Dummy(.{ .x = 0, .y = 0 });
-}
-
 /// A button at least 88 px wide (WinForms' size).
 pub fn button(text: []const u8, id: []const u8) bool {
     var b: [512]u8 = undefined;
@@ -795,58 +767,36 @@ pub fn checkbox(text: []const u8, id: []const u8, v: *bool) bool {
     return im.ImGui_Checkbox(lbl(&b, text, id).ptr, v);
 }
 
-/// A drop-down list: `items[sel.*]` shown; true when the user picked another one. Drawn as a button labelled
-/// "<current>##<id>" + a popup of "<item>##<id>_<n>" rows: ImGui's BeginCombo reports no label to the
-/// automation hooks, so a test could not click it.
+/// A drop-down list: `items[sel.*]` shown; true when the user picked another one. Automation: "##<id>" (value =
+/// the current item), rows "<item>##<id>_<n>".
 pub fn combo(id: []const u8, items: []const []const u8, sel: *usize, width: f32) bool {
-    const cur = if (sel.* < items.len) items[sel.*] else "";
-    var b: [640]u8 = undefined;
-    const l = std.mem.printSentinel(&b, "{s}##{s}", .{ cur[0..@min(cur.len, 500)], id }, 0) catch return false;
-    return dropDown(l, id, items, sel, width * scale());
+    return dropDown(id, items, sel, width * scale(), 0);
 }
 
 /// The arrow-only drop-down next to an editable box (WinForms' DropDown combo): "##<id>".
 pub fn dropDownArrow(id: []const u8, items: []const []const u8, picked: *?usize) void {
-    var b: [128]u8 = undefined;
-    const l = std.mem.printSentinel(&b, "##{s}", .{id}, 0) catch return;
     var sel: usize = std.math.maxInt(usize);
-    if (dropDown(l, id, items, &sel, im.ImGui_GetFrameHeight())) picked.* = sel;
+    if (dropDown(id, items, &sel, 0, im.ImGuiComboFlags_NoPreview)) picked.* = sel;
 }
 
-fn dropDown(label: [:0]const u8, id: []const u8, items: []const []const u8, sel: *usize, width: f32) bool {
-    const st = im.ImGui_GetStyle();
-    im.ImGui_PushStyleVarImVec2(im.ImGuiStyleVar_ButtonTextAlign, .{ .x = 0, .y = 0.5 });
-    im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Button, st.*.Colors[im.ImGuiCol_FrameBg]);
-    im.ImGui_PushStyleColorImVec4(im.ImGuiCol_ButtonHovered, st.*.Colors[im.ImGuiCol_FrameBgHovered]);
-    im.ImGui_PushStyleColorImVec4(im.ImGuiCol_ButtonActive, st.*.Colors[im.ImGuiCol_FrameBgActive]);
-    const pressed = im.ImGui_ButtonEx(label.ptr, .{ .x = width, .y = 0 });
-    im.ImGui_PopStyleColorEx(3);
-    im.ImGui_PopStyleVar();
-    const r0 = im.ImGui_GetItemRectMin();
-    const r1 = im.ImGui_GetItemRectMax();
-    // the arrow at the right end
-    const g = kit.ui.glyph(0xE70D);
-    const gs = im.ImGui_CalcTextSize(&g);
-    const ax = r1.x - st.*.FramePadding.x - gs.x;
-    im.ImDrawList_AddRectFilled(im.ImGui_GetWindowDrawList(), .{ .x = ax - st.*.FramePadding.x * 0.5, .y = r0.y + 1 }, .{ .x = r1.x - 1, .y = r1.y - 1 }, im.ImGui_GetColorU32(im.ImGuiCol_FrameBg));
-    im.ImDrawList_AddText(im.ImGui_GetWindowDrawList(), .{ .x = ax, .y = r0.y + (r1.y - r0.y - gs.y) / 2 }, im.ImGui_GetColorU32(im.ImGuiCol_Text), &g);
-    var pb: [128]u8 = undefined;
-    const popup = std.mem.printSentinel(&pb, "##{s}_popup", .{id}, 0) catch return false;
-    if (pressed) _ = im.ImGui_OpenPopup(popup.ptr, 0);
+fn dropDown(id: []const u8, items: []const []const u8, sel: *usize, width: f32, flags: c_int) bool {
+    var lb: [128]u8 = undefined;
+    const l = std.mem.printSentinel(&lb, "##{s}", .{id}, 0) catch return false;
+    const cur = if (sel.* < items.len) items[sel.*] else "";
+    var pb: [512]u8 = undefined;
+    const preview = std.mem.printSentinel(&pb, "{s}", .{cur[0..@min(cur.len, 500)]}, 0) catch "";
+    if (width > 0) im.ImGui_SetNextItemWidth(width);
+    if (!im.ImGui_BeginCombo(l.ptr, preview.ptr, flags)) return false;
+    defer im.ImGui_EndCombo();
     var changed = false;
-    im.ImGui_SetNextWindowPos(.{ .x = r0.x, .y = r1.y }, im.ImGuiCond_Always);
-    im.ImGui_SetNextWindowSizeConstraints(.{ .x = @max(r1.x - r0.x, 60 * scale()), .y = 0 }, .{ .x = 900 * scale(), .y = 400 * scale() }, null, null);
-    if (im.ImGui_BeginPopup(popup.ptr, 0)) {
-        for (items, 0..) |it, i| {
-            var ib: [600]u8 = undefined;
-            const il = std.mem.printSentinel(&ib, "{s}##{s}_{d}", .{ it[0..@min(it.len, 500)], id, i }, 0) catch continue;
-            if (im.ImGui_SelectableEx(il.ptr, i == sel.*, 0, .{ .x = 0, .y = 0 }) and i != sel.*) {
-                sel.* = i;
-                changed = true;
-            }
-            if (i == sel.* and im.ImGui_IsWindowAppearing()) im.ImGui_SetScrollHereY(0.5);
+    for (items, 0..) |it, i| {
+        var ib: [600]u8 = undefined;
+        const il = std.mem.printSentinel(&ib, "{s}##{s}_{d}", .{ it[0..@min(it.len, 500)], id, i }, 0) catch continue;
+        if (im.ImGui_SelectableEx(il.ptr, i == sel.*, 0, .{ .x = 0, .y = 0 }) and i != sel.*) {
+            sel.* = i;
+            changed = true;
         }
-        im.ImGui_EndPopup();
+        if (i == sel.*) im.ImGui_SetItemDefaultFocus();
     }
     return changed;
 }

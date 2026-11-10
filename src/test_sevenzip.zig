@@ -259,7 +259,7 @@ test "round trip 7z / zip / tar / wim: create, list, extract, compare, test, 7z.
         try sz.create(testing.allocator, arc, fx.items, opts);
         try testing.expect(started >= 3 and started <= files.len); // every file with data; 7z never asks for empty ones
 
-        const a = try sz.InArchive.open(testing.allocator, arc, null);
+        const a = try sz.InArchive.open(testing.allocator, arc, null, null);
         defer a.close();
         try testing.expectEqual(c.format, a.props.format);
         try expectNames(a, ar, want);
@@ -296,7 +296,7 @@ test "round trip gz / bz2 / xz (one file), selected index, writer target" {
     for (cases) |c| {
         const arc = try fx.path(try std.mem.concat(ar, u8, &.{ "random.bin.", c.ext }));
         try sz.create(testing.allocator, arc, &one, .{ .format = c.fmt, .props = &.{.{ .name = "x", .value = "1" }} });
-        const a = try sz.InArchive.open(testing.allocator, arc, null);
+        const a = try sz.InArchive.open(testing.allocator, arc, null, null);
         defer a.close();
         try testing.expectEqual(c.format, a.props.format);
         try testing.expectEqual(1, a.items.len);
@@ -331,14 +331,14 @@ test "7z password: data only and data + headers (he=on), wrong / missing passwor
     const data = try fx.path("data.7z");
     try sz.create(testing.allocator, data, fx.items, .{ .format = .SevenZip, .password = pw });
     {
-        const a = try sz.InArchive.open(testing.allocator, data, null);
+        const a = try sz.InArchive.open(testing.allocator, data, null, null);
         defer a.close();
         for (a.items) |it| try testing.expectEqual(!it.is_dir and it.size > 0, it.encrypted);
         var s1: ToDir = .{ .fx = fx, .root = try fx.path("x1") };
         try testing.expectError(error.PasswordNeeded, a.check(null, s1.sink()));
     }
     {
-        const a = try sz.InArchive.open(testing.allocator, data, "wrong");
+        const a = try sz.InArchive.open(testing.allocator, data, "wrong", null);
         defer a.close();
         var s2: ToDir = .{ .fx = fx, .root = try fx.path("x2") };
         // 7z.dll says kDataError / kCRCError for a wrong key on 7z bodies: an encrypted item makes it WrongPassword
@@ -346,14 +346,14 @@ test "7z password: data only and data + headers (he=on), wrong / missing passwor
         try testing.expect(s2.failed > 0 and (s2.first_bad == .data_error or s2.first_bad == .crc_error));
     }
     {
-        const a = try sz.InArchive.open(testing.allocator, data, ""); // "" = no password (C# IsNullOrEmpty)
+        const a = try sz.InArchive.open(testing.allocator, data, "", null); // "" = no password (C# IsNullOrEmpty)
         defer a.close();
         try testing.expect(a.password == null);
         var s5: ToDir = .{ .fx = fx, .root = try fx.path("x5") };
         try testing.expectError(error.PasswordNeeded, a.check(null, s5.sink()));
     }
     {
-        const a = try sz.InArchive.open(testing.allocator, data, pw);
+        const a = try sz.InArchive.open(testing.allocator, data, pw, null);
         defer a.close();
         const out = try fx.path("x3");
         var s3: ToDir = .{ .fx = fx, .root = out };
@@ -365,19 +365,19 @@ test "7z password: data only and data + headers (he=on), wrong / missing passwor
     // data + headers: nothing without the password
     const both = try fx.path("both.7z");
     try sz.create(testing.allocator, both, fx.items, .{ .format = .SevenZip, .password = pw, .props = &.{.{ .name = "he", .value = "on" }} });
-    try testing.expectError(error.PasswordNeeded, sz.InArchive.open(testing.allocator, both, null));
-    try testing.expectError(error.PasswordNeeded, sz.InArchive.open(testing.allocator, both, ""));
-    try testing.expectError(error.WrongPassword, sz.InArchive.open(testing.allocator, both, "wrong"));
+    try testing.expectError(error.PasswordNeeded, sz.InArchive.open(testing.allocator, both, null, null));
+    try testing.expectError(error.PasswordNeeded, sz.InArchive.open(testing.allocator, both, "", null));
+    try testing.expectError(error.WrongPassword, sz.InArchive.open(testing.allocator, both, "wrong", null));
     // create with "": no encryption at all
     const plain = try fx.path("plain.7z");
     try sz.create(testing.allocator, plain, fx.items, .{ .format = .SevenZip, .password = "" });
     {
-        const p = try sz.InArchive.open(testing.allocator, plain, null);
+        const p = try sz.InArchive.open(testing.allocator, plain, null, null);
         defer p.close();
         for (p.items) |it| try testing.expect(!it.encrypted);
     }
     try testing.expect(!try oracleTest(fx, both, "wrong"));
-    const a = try sz.InArchive.open(testing.allocator, both, pw);
+    const a = try sz.InArchive.open(testing.allocator, both, pw, null);
     defer a.close();
     try expectNames(a, ar, &(dirs ++ files));
     var s4: ToDir = .{ .fx = fx, .root = try fx.path("x4") };
@@ -406,7 +406,7 @@ test "zip encryption: AES-256 and ZipCrypto (Python zipfile reads only ZipCrypto
         const props: []const sz.Prop = if (aes) &.{} else &.{.{ .name = "em", .value = em }};
         try sz.create(testing.allocator, arc, fx.items, .{ .format = .Zip, .password = pw, .props = props });
         {
-            const a = try sz.InArchive.open(testing.allocator, arc, null);
+            const a = try sz.InArchive.open(testing.allocator, arc, null, null);
             defer a.close();
             for (a.items) |it| if (!it.is_dir and it.size > 0) {
                 try testing.expect(it.encrypted);
@@ -416,12 +416,12 @@ test "zip encryption: AES-256 and ZipCrypto (Python zipfile reads only ZipCrypto
             try testing.expectError(error.PasswordNeeded, a.check(null, s1.sink()));
         }
         {
-            const a = try sz.InArchive.open(testing.allocator, arc, "not-it");
+            const a = try sz.InArchive.open(testing.allocator, arc, "not-it", null);
             defer a.close();
             var s2: ToDir = .{ .fx = fx, .root = try fx.path("w") };
             try testing.expectError(error.WrongPassword, a.check(null, s2.sink()));
         }
-        const a = try sz.InArchive.open(testing.allocator, arc, pw);
+        const a = try sz.InArchive.open(testing.allocator, arc, pw, null);
         defer a.close();
         const out = try fx.path(try std.mem.concat(fx.arena.allocator(), u8, &.{ "out-", em }));
         var s3: ToDir = .{ .fx = fx, .root = out };
@@ -440,7 +440,7 @@ test "zip encryption: AES-256 and ZipCrypto (Python zipfile reads only ZipCrypto
         try changes.append(fx.arena.allocator(), .{ .add = .{ .name = "added.txt", .source = added } });
         const next = try fx.path("AES256-next.zip");
         try sz.update(a, next, changes.items, .{ .format = .Zip });
-        const b = try sz.InArchive.open(testing.allocator, next, pw);
+        const b = try sz.InArchive.open(testing.allocator, next, pw, null);
         defer b.close();
         for (b.items) |it| if (!it.is_dir and it.size > 0) {
             try testing.expect(it.encrypted);
@@ -468,14 +468,14 @@ test "corrupt archives: truncated 7z, flipped data byte, not an archive" {
 
     const cut = try fx.path("cut.7z");
     try Io.Dir.cwd().writeFile(io, .{ .sub_path = cut, .data = bytes[0 .. bytes.len / 2] });
-    try testing.expectError(error.Damaged, sz.InArchive.open(testing.allocator, cut, null));
+    try testing.expectError(error.Damaged, sz.InArchive.open(testing.allocator, cut, null, null));
 
     const flipped = try fx.path("flipped.7z");
     const copy = try fx.arena.allocator().dupe(u8, bytes);
     copy[bytes.len / 2] ^= 0x55; // inside random.bin's packed stream (s=off: one stream per file)
     try Io.Dir.cwd().writeFile(io, .{ .sub_path = flipped, .data = copy });
     {
-        const a = try sz.InArchive.open(testing.allocator, flipped, null);
+        const a = try sz.InArchive.open(testing.allocator, flipped, null, null);
         defer a.close();
         var s: ToDir = .{ .fx = fx, .root = try fx.path("f") };
         try testing.expectError(error.DataError, a.check(null, s.sink()));
@@ -500,7 +500,7 @@ test "corrupt archives: truncated 7z, flipped data byte, not an archive" {
         const full = try fx.read(whole);
         const short = try fx.path(try std.mem.concat(ar, u8, &.{ "short.", c.ext }));
         try Io.Dir.cwd().writeFile(io, .{ .sub_path = short, .data = full[0 .. full.len * 2 / 3] });
-        const a = sz.InArchive.open(testing.allocator, short, null) catch |e| {
+        const a = sz.InArchive.open(testing.allocator, short, null, null) catch |e| {
             try testing.expectEqual(error.Damaged, e);
             continue;
         };
@@ -509,15 +509,16 @@ test "corrupt archives: truncated 7z, flipped data byte, not an archive" {
         const checked = a.check(null, s.sink());
         // measured: zip and tar open with a partial list and unexpected_end; gz opens clean, its check fails
         if (c.fmt != .GZip) try testing.expect(a.props.error_flags & sz.arc_flag.unexpected_end != 0);
+        if (c.fmt != .GZip) try testing.expectEqual(@import("strings.zig").openedTruncated, @import("core/engine.zig").openWarning(a.props).?);
         try testing.expectError(error.DataError, checked);
         try testing.expect(!try oracleTest(fx, short, null));
     }
 
-    try testing.expectError(error.NotArchive, sz.InArchive.open(testing.allocator, try fx.join(fx.src, "text.txt"), null));
-    try testing.expectError(error.FileNotFound, sz.InArchive.open(testing.allocator, try fx.path("missing.7z"), null));
+    try testing.expectError(error.NotArchive, sz.InArchive.open(testing.allocator, try fx.join(fx.src, "text.txt"), null, null));
+    try testing.expectError(error.FileNotFound, sz.InArchive.open(testing.allocator, try fx.path("missing.7z"), null, null));
     const fake = try fx.path("fake.zip"); // the extension says zip, the bytes do not
     try Io.Dir.cwd().writeFile(io, .{ .sub_path = fake, .data = "not a zip at all" });
-    try testing.expectError(error.Damaged, sz.InArchive.open(testing.allocator, fake, null));
+    try testing.expectError(error.Damaged, sz.InArchive.open(testing.allocator, fake, null, null));
 }
 
 test "cancel mid-extract and mid-create: Canceled, partial archive removed" {
@@ -525,7 +526,7 @@ test "cancel mid-extract and mid-create: Canceled, partial archive removed" {
     defer fx.deinit();
     const arc = try fx.path("c.7z");
     try sz.create(testing.allocator, arc, fx.items, .{ .format = .SevenZip, .props = &.{ .{ .name = "s", .value = "off" }, .{ .name = "x", .value = "1" } } });
-    const a = try sz.InArchive.open(testing.allocator, arc, null);
+    const a = try sz.InArchive.open(testing.allocator, arc, null, null);
     defer a.close();
     var steps: usize = 0;
     var s: ToDir = .{ .fx = fx, .root = try fx.path("c") };
@@ -588,7 +589,7 @@ test "packed sizes and archive props: solid / non-solid 7z, zip comment, split v
     const solid = try fx.path("solid.7z");
     try sz.create(testing.allocator, solid, fx.items, .{ .format = .SevenZip, .props = &.{ .{ .name = "s", .value = "on" }, .{ .name = "m", .value = "LZMA2" }, .{ .name = "d", .value = "1m" } } });
     {
-        const a = try sz.InArchive.open(testing.allocator, solid, null);
+        const a = try sz.InArchive.open(testing.allocator, solid, null, null);
         defer a.close();
         try testing.expect(a.props.solid);
         try testing.expectEqual(@as(?u64, 1), a.props.blocks);
@@ -609,7 +610,7 @@ test "packed sizes and archive props: solid / non-solid 7z, zip comment, split v
     const loose = try fx.path("loose.7z");
     try sz.create(testing.allocator, loose, fx.items, .{ .format = .SevenZip, .props = &.{.{ .name = "s", .value = "off" }} });
     {
-        const a = try sz.InArchive.open(testing.allocator, loose, null);
+        const a = try sz.InArchive.open(testing.allocator, loose, null, null);
         defer a.close();
         try testing.expect(!a.props.solid);
         try testing.expectEqual(@as(?u64, 3), a.props.blocks); // the three non-empty files
@@ -626,7 +627,7 @@ test "packed sizes and archive props: solid / non-solid 7z, zip comment, split v
     , &.{zip});
     try testing.expect(r.ok);
     {
-        const a = try sz.InArchive.open(testing.allocator, zip, null);
+        const a = try sz.InArchive.open(testing.allocator, zip, null, null);
         defer a.close();
         try testing.expectEqualStrings("MakePack test comment", a.props.comment.?);
         try testing.expectEqualStrings("Deflate", a.items[0].method);
@@ -641,14 +642,14 @@ test "packed sizes and archive props: solid / non-solid 7z, zip comment, split v
     const made = try run(fx, &.{ paths.seven_zip_exe, "a", "-v300k", "-mx=0", parts, try fx.join(fx.src, "sub\\random.bin") });
     try testing.expect(made.ok);
     const first = try std.mem.concat(ar, u8, &.{ parts, ".001" });
-    const a = try sz.InArchive.open(testing.allocator, first, null);
+    const a = try sz.InArchive.open(testing.allocator, first, null, null);
     defer a.close();
     try testing.expectEqual(sz.Format.Split, a.props.format);
     try testing.expectEqual(@as(?u64, 4), a.props.volumes);
     const out = try fx.path("joined");
     var s: ToDir = .{ .fx = fx, .root = out };
     try a.extract(null, s.sink());
-    const joined = try sz.InArchive.open(testing.allocator, try fx.join(out, fspath.basename(a.items[0].path)), null);
+    const joined = try sz.InArchive.open(testing.allocator, try fx.join(out, fspath.basename(a.items[0].path)), null, null);
     defer joined.close();
     try testing.expectEqual(sz.Format.SevenZip, joined.props.format);
 }
@@ -664,7 +665,7 @@ test "update: keep / rename / delete / add on 7z and zip; append keeps the archi
         const base = try fx.path(if (fmt == .Zip) "base.zip" else "base.7z");
         const next = try fx.path(if (fmt == .Zip) "next.zip" else "next.7z");
         try sz.create(testing.allocator, base, fx.items, .{ .format = fmt });
-        const a = try sz.InArchive.open(testing.allocator, base, null);
+        const a = try sz.InArchive.open(testing.allocator, base, null, null);
         defer a.close();
         try testing.expectError(error.InvalidOption, sz.update(a, next, &.{}, .{ .format = .Tar })); // not its own format
 
@@ -680,7 +681,7 @@ test "update: keep / rename / delete / add on 7z and zip; append keeps the archi
         try changes.append(ar, .{ .add = .{ .name = "added.txt", .source = added } });
         try sz.update(a, next, changes.items, .{ .format = fmt });
 
-        const b = try sz.InArchive.open(testing.allocator, next, null);
+        const b = try sz.InArchive.open(testing.allocator, next, null, null);
         defer b.close();
         try expectNames(b, ar, &.{ "added.txt", "empty1", "empty1\\empty2", "empty1\\empty2\\empty3", "renamed\\Їжак.txt", "sub", "sub\\random.bin", "text.txt" });
         const out = try fx.path(if (fmt == .Zip) "u-zip" else "u-7z");
@@ -700,15 +701,15 @@ test "update: keep / rename / delete / add on 7z and zip; append keeps the archi
     const pw = "secret";
     const enc = try fx.path("enc.7z");
     try sz.create(testing.allocator, enc, fx.items, .{ .format = .SevenZip, .password = pw, .props = &.{.{ .name = "he", .value = "on" }} });
-    const a = try sz.InArchive.open(testing.allocator, enc, pw);
+    const a = try sz.InArchive.open(testing.allocator, enc, pw, null);
     defer a.close();
     var changes: std.ArrayList(sz.Change) = .empty;
     for (a.items) |it| try changes.append(ar, .{ .keep = it.index });
     try changes.append(ar, .{ .add = .{ .name = "added.txt", .source = added } });
     const enc2 = try fx.path("enc2.7z");
     try sz.update(a, enc2, changes.items, .{ .format = .SevenZip });
-    try testing.expectError(error.PasswordNeeded, sz.InArchive.open(testing.allocator, enc2, null)); // headers stay encrypted
-    const b = try sz.InArchive.open(testing.allocator, enc2, pw);
+    try testing.expectError(error.PasswordNeeded, sz.InArchive.open(testing.allocator, enc2, null, null)); // headers stay encrypted
+    const b = try sz.InArchive.open(testing.allocator, enc2, pw, null);
     defer b.close();
     for (b.items) |it| if (std.mem.eql(u8, it.path, "added.txt")) try testing.expect(it.encrypted);
     _ = try crossCheck(fx, b, enc2, pw);
@@ -716,7 +717,7 @@ test "update: keep / rename / delete / add on 7z and zip; append keeps the archi
     // deleting from an encrypted solid block needs the key: opened without one (headers plain) -> PasswordNeeded
     const data_only = try fx.path("data-only.7z");
     try sz.create(testing.allocator, data_only, fx.items, .{ .format = .SevenZip, .password = pw });
-    const c = try sz.InArchive.open(testing.allocator, data_only, null);
+    const c = try sz.InArchive.open(testing.allocator, data_only, null, null);
     defer c.close();
     var drop_one: std.ArrayList(sz.Change) = .empty;
     for (c.items) |it| if (!std.mem.eql(u8, it.path, "text.txt")) try drop_one.append(ar, .{ .keep = it.index });
@@ -724,7 +725,7 @@ test "update: keep / rename / delete / add on 7z and zip; append keeps the archi
     try testing.expectError(error.PasswordNeeded, sz.update(c, out3, drop_one.items, .{ .format = .SevenZip }));
     try testing.expectError(error.FileNotFound, Io.Dir.cwd().statFile(testing.io, out3, .{}));
     // ... and opened with the wrong one: WrongPassword (7z.dll only says the repacked block failed its check)
-    const d = try sz.InArchive.open(testing.allocator, data_only, "wrong");
+    const d = try sz.InArchive.open(testing.allocator, data_only, "wrong", null);
     defer d.close();
     try testing.expectError(error.WrongPassword, sz.update(d, out3, drop_one.items, .{ .format = .SevenZip }));
     try testing.expectError(error.FileNotFound, Io.Dir.cwd().statFile(testing.io, out3, .{}));
@@ -735,7 +736,7 @@ test "update: keep / rename / delete / add on 7z and zip; append keeps the archi
     const link_w = try std.unicode.wtf8ToWtf16LeAllocZ(ar, link);
     const target_w = try std.unicode.wtf8ToWtf16LeAllocZ(ar, data_only);
     try testing.expect(w.CreateHardLinkW(link_w.ptr, target_w.ptr, null) != 0);
-    const via_link = try sz.InArchive.open(testing.allocator, link, pw);
+    const via_link = try sz.InArchive.open(testing.allocator, link, pw, null);
     defer via_link.close();
     try testing.expectError(error.FileBusy, sz.update(via_link, data_only, drop_one.items, .{ .format = .SevenZip }));
     try testing.expect(try oracleTest(fx, data_only, pw));
@@ -749,7 +750,7 @@ test "SFX: 7z.sfx + 7z data opens as 7z, extracts" {
     const sfx = try fx.path("setup.exe");
     const stub = try Io.Dir.cwd().readFileAlloc(testing.io, paths.seven_zip_sfx, fx.arena.allocator(), .limited(4 << 20));
     try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = sfx, .data = try std.mem.concat(fx.arena.allocator(), u8, &.{ stub, try fx.read(arc) }) });
-    const a = try sz.InArchive.open(testing.allocator, sfx, null);
+    const a = try sz.InArchive.open(testing.allocator, sfx, null, null);
     defer a.close();
     try testing.expectEqual(sz.Format.SevenZip, a.props.format);
     const out = try fx.path("sfx-out");
@@ -771,7 +772,7 @@ test "one item out of a solid block; mtime + attributes; overwriting a read-only
     _ = w.SetFileAttributesW(src_w.ptr, w.FILE_ATTRIBUTE_NORMAL);
     try made;
 
-    const a = try sz.InArchive.open(testing.allocator, arc, null);
+    const a = try sz.InArchive.open(testing.allocator, arc, null, null);
     defer a.close();
     const item = for (a.items) |*it| {
         if (std.mem.eql(u8, it.path, "Їжак ґанок.txt")) break it;
@@ -841,7 +842,7 @@ test "folder times (NewItem.folder), a symlinked source, paths past MAX_PATH" {
     try Io.Dir.cwd().createDirPath(testing.io, deep);
     const arc = try fx.join(deep, "deep.7z");
     try sz.create(testing.allocator, arc, items.items, .{ .format = .SevenZip });
-    const a = try sz.InArchive.open(testing.allocator, arc, null);
+    const a = try sz.InArchive.open(testing.allocator, arc, null, null);
     defer a.close();
     for (a.items) |it| {
         if (std.mem.eql(u8, it.path, "empty1")) try testing.expectEqual(@as(u64, @intCast(old)), it.mtime);
@@ -862,7 +863,7 @@ test "an archive opened on one thread extracts on another" {
     defer fx.deinit();
     const arc = try fx.path("t.7z");
     try sz.create(testing.allocator, arc, fx.items, .{ .format = .SevenZip, .props = &.{.{ .name = "mt", .value = "4" }} });
-    const a = try sz.InArchive.open(testing.allocator, arc, null);
+    const a = try sz.InArchive.open(testing.allocator, arc, null, null);
     defer a.close();
     const out = try fx.path("thread");
     var s: ToDir = .{ .fx = fx, .root = out };

@@ -71,7 +71,7 @@ pub const Msg = struct {
         im.ImGui_PopFont();
         im.ImGui_SameLineEx(0, 14 * s);
         const wrap = @min(480 * s, @max(300 * s, im.ImGui_CalcTextSizeEx(m.body_text.ptr, m.body_text.ptr + m.body_text.len, false, -1).x + 4));
-        D.textItem(m.body_text, "msg_text", wrap);
+        kit.ui.text("msg_text", m.body_text, null, wrap);
         im.ImGui_Dummy(.{ .x = 0, .y = 6 * s });
 
         var yb: [64]u8 = undefined;
@@ -164,7 +164,7 @@ pub const Password = struct {
 
     pub fn body(p: *Password, d: *Dialogs) bool {
         const s = D.scale();
-        D.textItem(p.prompt, "password_prompt", 336 * s);
+        kit.ui.text("password_prompt", p.prompt, null, 336 * s);
         if (p.focus) {
             im.ImGui_SetKeyboardFocusHere();
             p.focus = false;
@@ -248,7 +248,7 @@ pub const Name = struct {
     }
 
     pub fn body(n: *Name, d: *Dialogs) bool {
-        D.textItem(n.prompt, "name_prompt", 356 * D.scale());
+        kit.ui.text("name_prompt", n.prompt, null, 356 * D.scale());
         if (n.focus) {
             im.ImGui_SetKeyboardFocusHere();
             n.focus = false;
@@ -323,7 +323,7 @@ pub const Conflict = struct {
         im.ImGui_PushFontFloat(d_bold(), im.ImGui_GetStyle().*.FontSizeBase * 1.15);
         im.ImGui_TextUnformatted(S.fileExists.get());
         im.ImGui_PopFont();
-        D.textItem(c.path, "conflict_path", 460 * s);
+        kit.ui.text("conflict_path", c.path, null, 460 * s);
         im.ImGui_Dummy(.{ .x = 0, .y = 4 * s });
         _ = D.checkbox(S.applyToAll.get(), "conflict_all", &c.all);
         var answer: ?usize = null;
@@ -395,8 +395,6 @@ pub fn cliAskPassword(gpa: Allocator, title: []const u8, label: ?[]const u8) ?[]
     }) catch return null;
     app.run(.{ .user = &st, .frame = cliFrame });
     app.deinit();
-    // kit.app registers its window class once per process; a second prompt (confirm) needs it gone.
-    _ = w.UnregisterClassW(kit.win.L("MakeKitWindow"), w.GetModuleHandleW(null));
     defer std.crypto.secureZero(u8, &st.box);
     if (st.answer != true) return null;
     return gpa.dupe(u8, D.bufText(&st.box)) catch null;
@@ -409,7 +407,7 @@ fn cliFrame(app: *kit.app.App) void {
     im.ImGui_SetNextWindowSize(vp.*.WorkSize, 0);
     _ = im.ImGui_Begin("##cli_password", null, im.ImGuiWindowFlags_NoDecoration | im.ImGuiWindowFlags_NoMove | im.ImGuiWindowFlags_NoSavedSettings);
     defer im.ImGui_End();
-    D.textItem(st.prompt, "password_prompt", im.ImGui_GetContentRegionAvail().x);
+    kit.ui.text("password_prompt", st.prompt, null, im.ImGui_GetContentRegionAvail().x);
     if (st.focus) {
         im.ImGui_SetKeyboardFocusHere();
         st.focus = false;

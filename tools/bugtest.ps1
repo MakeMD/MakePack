@@ -100,6 +100,8 @@ function Must-Connect($p, [int]$Sec = 15) {
 function Items($app) { try { @(Get-AutoItems $app) } catch { @() } }
 function Windows($app) { try { @(Get-AutoItems $app -Windows | ForEach-Object { $_.name }) } catch { @() } }
 function Text-Of([string]$label) { $i = $label.IndexOf('##'); if ($i -ge 0) { $label.Substring(0, $i) } else { $label } }
+# What an item shows: its value (combo preview, kit.ui.text, input box), else the label's text.
+function Value-Of($it) { if ($null -ne $it.value) { [string]$it.value } else { Text-Of $it.label } }
 
 # An item whose label ends with $Id ('##msg_text', '###title', 'inside1.txt###r'), or $null.
 function Find-Item($app, [string]$Id) { @(Items $app | Where-Object { $_.label.EndsWith($Id) }) | Select-Object -First 1 }
@@ -169,7 +171,7 @@ function Wait-Exit($app, [int]$Sec) {
 function Screen-Texts($app) {
     $out = @()
     foreach ($n in (Windows $app)) { $t = $n.Split('/')[0]; $i = $t.IndexOf('###'); if ($i -ge 0) { $t = $t.Substring(0, $i) }; if ($t.Trim()) { $out += $t.Trim() } }
-    foreach ($it in (Items $app)) { $t = (Text-Of $it.label).Trim(); if ($t) { $out += $t } }
+    foreach ($it in (Items $app)) { $t = (Value-Of $it).Trim(); if ($t) { $out += $t } }
     ,$out
 }
 
@@ -777,7 +779,35 @@ Test-Case 'trailing_backslash_arg' {
 
 # ---------- 14 ----------
 Test-Case 'readonly_target_overwrite' {
-    Skip-Test "extracting over existing files raises the Ask conflict prompt; covered by tools\gui_dialogs.ps1 (queue), not here"
+    # Extracting over existing files asks (the queue's conflict question); Overwrite + "apply to all" replaces a
+    # read-only file too. A second invocation is forwarded and queued (its progress titled 2/2); Cancel on its
+    # question ends the run with 255.
+    $d = New-TestDir 'readonly'
+    $src = New-Dir (Join-Path $d 'src')
+    Set-Content -LiteralPath (Join-Path $src 'one.txt') -Value 'from a' -Encoding ASCII
+    $here = New-Dir (Join-Path $d 'q')
+    $qa = Join-Path $here 'a.7z'; $qb = Join-Path $here 'b.7z'
+    Push-Location $src
+    try {
+        SevenZip @('a', $qa, 'one.txt', '-bso0', '-bsp0')
+        Set-Content -LiteralPath (Join-Path $src 'one.txt') -Value 'from b' -Encoding ASCII
+        SevenZip @('a', $qb, 'one.txt', '-bso0', '-bsp0')
+    } finally { Pop-Location }
+    $target = Join-Path $here 'one.txt'
+    Set-Content -LiteralPath $target -Value 'old' -Encoding ASCII
+    Set-ItemProperty -LiteralPath $target -Name IsReadOnly -Value $true
+    $app = Must-Connect (Start-App @('x', (Q $qa), '--here'))
+    $null = Must-Item $app '##conflict_overwrite' 15
+    $fw = Start-App @('x', (Q $qb), '--here')
+    Assert ($fw.WaitForExit(10000) -and $fw.ExitCode -eq 0) "the second invocation did not forward and exit 0"
+    Click $app '##conflict_all'
+    Click $app '##conflict_overwrite'
+    $null = Must-Item $app '##conflict_cancel' 15
+    Assert ((Get-Content -LiteralPath $target -Raw).Trim() -eq 'from a') ("the read-only file was not overwritten: " + (Get-Content -LiteralPath $target -Raw))
+    Assert (@(Windows $app | Where-Object { $_ -like '*2/2*' }).Count -gt 0) ("the queued run's progress is not titled 2/2: " + (Titles (Windows $app)))
+    Click $app '##conflict_cancel'
+    $code = Wait-Exit $app 15
+    Assert ($code -eq 255) ("Cancel on the question must end the run with 255, got " + $code)
 }
 
 # ---------- 15 ----------
@@ -1030,7 +1060,7 @@ Test-Case 'create_zipcrypto' {
         $app = Must-Connect $p 20
         $null = Must-Item $app '##compress_create' 20
         $fmt = Find-Item $app '##compress_format'
-        Assert ((Text-Of $fmt.label) -eq 'zip') ("the dialog did not start on zip: " + $fmt.label)
+        Assert ((Value-Of $fmt) -eq 'zip') ("the dialog did not start on zip: " + (Value-Of $fmt))
         Type-Into $app '##compress_password' 'hunter2'
         Type-Into $app '##compress_confirm' 'hunter3'
         $archive = Join-Path $d 'payload.zip'
@@ -1116,7 +1146,7 @@ Test-Case 'profile_dialog' {
             $all = (Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json).Profiles
             @($all | Where-Object { $_.Name -eq $name }) | Select-Object -First 1
         }
-        $state = "profile=" + (Text-Of (Find-Item $app '##compress_profile').label) + " format=" + (Text-Of (Find-Item $app '##compress_format').label)
+        $state = "profile=" + (Value-Of (Find-Item $app '##compress_profile')) + " format=" + (Value-Of (Find-Item $app '##compress_format'))
         Assert ($state -like 'profile=Big zip*format=zip') ("the default profile was not applied on open: " + $state)
         Assert ([bool](Find-Item $app '##compress_test_after').checked) "the profile's Test box is not ticked"
         $snap = Save-As 'Snap'
@@ -1124,7 +1154,7 @@ Test-Case 'profile_dialog' {
         Assert ($snap.Format -eq 'Zip' -and $snap.Volumes -eq '100 MB' -and $snap.TestAfter) ("the default profile was not applied on open: saved " + ($snap | ConvertTo-Json -Compress))
 
         Pick $app 'compress_profile' 'Plain 7z*'
-        $fmt = Text-Of (Find-Item $app '##compress_format').label
+        $fmt = Value-Of (Find-Item $app '##compress_format')
         Assert ($fmt -eq '7z') ("picking Plain 7z gave format=" + $fmt)
         $mine = Save-As 'Mine'
         Assert ($mine -ne $null) ("Save... did not store the profile: " + ((Get-Content -LiteralPath $cfg -Raw) -replace '\s+', ' '))
@@ -1654,6 +1684,385 @@ Test-Case 'gui_context_menu' {
     Invoke-AutoClick $app 'inside1.txt###r' -Kind rclick
     Assert ((Wait-Item $app '###c_copy' 3) -ne $null) ("no context menu (Copy) after a right click on a row; on screen: " + (Dialog-Text $app))
     Invoke-AutoKey $app 'Escape'
+}
+
+# ---------- 22 ----------
+# The main window's layout: saved bounds on the test monitor, the tree scrolled to a deep folder, the archive
+# columns inside the default 900 px window, the flat view's Path column, a selected row's fill, the rename box.
+Test-Case 'main_window_layout' {
+    Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+    if (-not ('Mp.Rect' -as [type])) {
+        Add-Type -Namespace Mp -Name Rect -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+'@
+    }
+    $d = New-TestDir 'layout'
+    $disk = New-Dir (Join-Path $d 'disk')
+    Set-Content -LiteralPath (Join-Path $disk 'a.txt') -Value 'alpha' -Encoding ASCII
+    $src = New-Dir (Join-Path $d 'src')
+    foreach ($n in 'dir1', 'dir2') {
+        $null = New-Dir (Join-Path $src $n)
+        Set-Content -LiteralPath (Join-Path $src ($n + '\same.txt')) -Value ('same in ' + $n) -Encoding ASCII
+    }
+    $zip = Join-Path $disk 'arc.zip'
+    Push-Location $src
+    try { SevenZip @('a', '-tzip', $zip, 'dir1', 'dir2', '-bso0', '-bsp0') } finally { Pop-Location }
+    $deep = New-Dir (Join-Path $d 'deep\level-one-folder\level-two-folder\level-three-folder\the-deepest-folder-name')
+    $wa = ([System.Windows.Forms.Screen]::AllScreens | Where-Object { $_.DeviceName -like ('*DISPLAY' + $Screen) } | Select-Object -First 1).WorkingArea
+    $want = @(($wa.Left + 40), ($wa.Top + 30), 1000, 700) -join ','
+    With-Settings ('{"Window":[' + $want + '],"Maximized":false,"Tree":true}') {
+        $app = Must-Connect (Start-App @((Q $deep)))
+        $null = Must-Item $app '###status' 15
+        $null = Invoke-AutoFrames $app 6
+        $r = New-Object Mp.Rect+RECT
+        [void][Mp.Rect]::GetWindowRect($app.Process.MainWindowHandle, [ref]$r)
+        $got = @($r.Left, $r.Top, ($r.Right - $r.Left), ($r.Bottom - $r.Top)) -join ','
+        Assert ($got -eq $want) ("the saved Window bounds were not applied: got " + $got + ", want " + $want)
+        # 11 levels deep the row starts ~230 px right of the tree's edge unscrolled; scrolled, near the edge
+        $node = @(Items $app | Where-Object { $_.label -like '*###t*the-deepest-folder-name' }) | Select-Object -First 1
+        Assert ($node -and $node.visible -and $node.x0 -lt 100) ("the deep tree node is not scrolled into view: " + $(if ($node) { 'x0=' + $node.x0 } else { 'no node' }))
+        $null = Stop-AutoApp $app
+        $saved = (Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json).Window -join ','
+        Assert ($saved -eq $want) ("the bounds were not saved back unchanged: " + $saved)
+    }
+    With-Settings '{"Tree":true}' {
+        $app = Must-Connect (Start-App @((Q $zip)))
+        $null = Must-Item $app 'dir1###r' 15
+        $list = @(Get-AutoItems $app -Windows | Where-Object { $_.name -like '*##list*' -and $_.name -notlike '*##files*' }) | Select-Object -First 1
+        $crc = Find-Item $app '###c_crc'
+        Assert ($crc -and $list -and $crc.x1 -le $list.x1 + 1) ("the CRC32 header sticks out of the list: " + $(if ($crc) { 'crc x1=' + $crc.x1 + ' list x1=' + $list.x1 } else { 'no header' }))
+        Invoke-AutoKey $app 'ctrl+H'
+        $null = Must-Item $app '###c_path' 5
+        $null = Invoke-AutoFrames $app 3
+        $path = Find-Item $app '###c_path'
+        $rows = @(Items $app | Where-Object { $_.label -eq 'same.txt###r' })
+        Assert ($path.visible -and $path.x1 -le $list.x1 + 1 -and $rows.Count -eq 2) ("flat view: Path header x1=" + $path.x1 + " (list x1=" + $list.x1 + "), same.txt rows: " + $rows.Count)
+        Invoke-AutoKey $app 'ctrl+H'
+        Invoke-AutoKey $app 'alt+UpArrow'
+        $row = Must-Item $app 'a.txt###r'
+        Click $app 'a.txt###r'
+        $null = Invoke-AutoFrames $app 3
+        $png = Save-AutoScreenshot $app (Join-Path $d 'selected.png') -Png
+        $bm = [System.Drawing.Bitmap]::FromFile($png)
+        try { $px = $bm.GetPixel([int]($row.x1 - 6), [int](($row.y0 + $row.y1) / 2)) } finally { $bm.Dispose() }
+        Assert ($px.G -lt 0xEA) ("a hovered selected row has no visible fill: " + ('{0:X2}{1:X2}{2:X2}' -f $px.R, $px.G, $px.B))
+        Invoke-AutoKey $app 'F2'
+        $null = Must-Item $app '##rename' 5
+        $null = Invoke-AutoFrames $app 2
+        $box = Find-Item $app '##rename'
+        Assert (($box.y1 - $box.y0) -le ($row.y1 - $row.y0) + 1) ("the rename box is taller than a row: " + ($box.y1 - $box.y0) + " vs " + ($row.y1 - $row.y0))
+        Invoke-AutoKey $app 'Escape'
+    }
+}
+
+# ---------- 23 ----------
+# An archive forwarded to the running window opens there (on a job: the title follows), and Alt+T on it (names
+# readable, bodies encrypted) asks for the password - never the CLI's "-p / MAKEPACK_PASSWORD" hint.
+Test-Case 'test_asks_password' {
+    $d = New-TestDir 'testpw'
+    $src = New-Dir (Join-Path $d 'src')
+    Set-Content -LiteralPath (Join-Path $src 'x.txt') -Value 'secret' -Encoding ASCII
+    $zip = Join-Path $d 'pw.zip'
+    Push-Location $src
+    try { SevenZip @('a', '-tzip', '-pSecret1', $zip, 'x.txt', '-bso0', '-bsp0') } finally { Pop-Location }
+    $app = Must-Connect (Start-App @((Q $d)))
+    $null = Must-Item $app 'pw.zip###r' 15
+    $fw = Start-App @((Q $zip))
+    Assert ($fw.WaitForExit(10000) -and $fw.ExitCode -eq 0) "the second process did not forward and exit 0"
+    $null = Wait-AutoLabel $app '*pw.zip*###title' 10000
+    $null = Must-Item $app 'x.txt###r'
+    Invoke-AutoKey $app 'alt+T'
+    $null = Must-Item $app '##password_input'
+    Type-Into $app '##password_input' 'Secret1'
+    Click $app '##password_ok'
+    $null = Must-Item $app '##msg_text' 15
+    $all = (@(Items $app | ForEach-Object { $_.label }) -join ' | ')
+    Assert ($all -notlike '*MAKEPACK_PASSWORD*') ("the CLI's password hint is on screen: " + $all)
+    Assert (Has-Exact (Screen-Texts $app) (S-Text 'TestOk')) ("Test did not pass after the password; on screen: " + (Dialog-Text $app))
+}
+
+# ---------- 24 ----------
+# A 7z whose packed header is corrupt is damaged (its own alert, exit 3), never a password question; an
+# encrypted header still asks, and a wrong password asks again instead of calling the file damaged.
+Test-Case 'damaged_7z_header' {
+    $d = New-TestDir 'badhdr'
+    $many = New-Dir (Join-Path $d 'many')
+    1..80 | ForEach-Object { Set-Content -LiteralPath (Join-Path $many ('file-number-{0:d3}.txt' -f $_)) -Value ('x' + $_) -Encoding ASCII }
+    $good = Join-Path $d 'good.7z'
+    Push-Location $many
+    try { SevenZip @('a', $good, '*.txt', '-bso0', '-bsp0') } finally { Pop-Location }
+    $bytes = [System.IO.File]::ReadAllBytes($good)
+    $nho = [BitConverter]::ToUInt64($bytes, 12)
+    Assert ($bytes[32 + $nho] -eq 0x17) ("fixture: the next header is not a packed one: " + $bytes[32 + $nho])
+    $bytes[32 + $nho - 3] = $bytes[32 + $nho - 3] -bxor 0xFF # inside the packed header stream
+    $bad = Join-Path $d 'badhdr.7z'
+    [System.IO.File]::WriteAllBytes($bad, $bytes)
+    $app = Must-Connect (Start-App @('x', (Q $bad)))
+    $null = Must-Item $app '##msg_text' 15
+    Assert ((Find-Item $app '##password_input') -eq $null) "a corrupt packed header brought up a password prompt"
+    Assert (Has-Exact (Screen-Texts $app) (S-Text 'Damaged')) ("no 'damaged' alert: " + (Dialog-Text $app))
+    Click $app '##msg_ok'
+    $code = Wait-Exit $app 15
+    Assert ($code -eq 3) ("a damaged archive must exit 3, got " + $code)
+
+    $enc = Make-EncryptedFixture $d
+    $app = Must-Connect (Start-App @('x', (Q $enc)))
+    Drive-Password $app 'wrong'
+    $null = Wait-Text $app (S-Text 'WrongPasswordRetry') 15
+    Assert ((Find-Item $app '##password_input') -ne $null -and (Find-Item $app '##msg_text') -eq $null) ("a wrong password did not simply ask again: " + (Dialog-Text $app))
+    Click $app '##password_cancel'
+    $code = Wait-Exit $app 15
+    Assert ($code -eq 255) ("a cancelled password prompt must exit 255, got " + $code)
+}
+
+# ---------- 25 ----------
+# The viewer (found through Find): cp1251 detected, readable state items (encoding, font, wrap, content), the
+# View menu's check marks, switching to UTF-8, Esc closing an open list or menu before the viewer itself.
+Test-Case 'viewer_states' {
+    $d = New-TestDir 'viewer'
+    $src = New-Dir (Join-Path $d 'src')
+    Set-Content -LiteralPath (Join-Path $src 'one.txt') -Value ('hello one ' * 400) -Encoding ASCII
+    # cp1251 bytes of a Cyrillic word + an ASCII marker
+    $cyr = [byte[]](0xCF, 0xF0, 0xE8, 0xE2, 0xB3, 0xF2, 0x20) + [System.Text.Encoding]::ASCII.GetBytes("zebra line one`r`nline two`r`n")
+    [System.IO.File]::WriteAllBytes((Join-Path $src 'cyr.txt'), $cyr)
+    $va = Join-Path $d 'v.7z'
+    Push-Location $src
+    try { SevenZip @('a', $va, 'one.txt', 'cyr.txt', '-bso0', '-bsp0') } finally { Pop-Location }
+    $app = Must-Connect (Start-App @((Q $va)))
+    $null = Must-Item $app '###mcommands' 15
+    $null = Invoke-AutoFrames $app 5
+    Click $app '###mtools'; Click $app '###m_find'
+    $null = Must-Item $app '##find_go'
+    Type-Into $app '##find_text' 'zebra'
+    Click $app '##find_go'
+    $null = Must-Item $app '##find_r0' 15
+    Click $app '##find_r0'; Click $app '##find_view'
+    $e = Must-Item $app '##viewer_enc_state'
+    Assert ($e.label -eq 'Windows (1251)##viewer_enc_state') ("cp1251 not detected: " + $e.label)
+    $c = Find-Item $app '##viewer_content'
+    Assert ($c -and $c.label -like '*zebra line one*line two*') ("content not readable: " + $(if ($c) { $c.label } else { 'none' }))
+    $c1251 = $c.label
+    Assert ((Find-Item $app '##viewer_font_state').label -eq 'Consolas 16##viewer_font_state') "not Consolas 16 by default (ViewerForm)"
+    Click $app '##viewer_mview'
+    $m = Must-Item $app '##viewer_enc0'
+    Assert ([bool]$m.checked -and [bool]$m.checkable) ("the View menu's check mark does not reach the test: checked=" + $m.checked)
+    Click $app '##viewer_enc3'
+    $e = Find-Item $app '##viewer_enc_state'
+    Assert ($e.label -eq 'UTF-8##viewer_enc_state' -and (Find-Item $app '##viewer_content').label -ne $c1251) ("the switch to UTF-8 is not visible: " + $e.label)
+    Click $app '##viewer_text'
+    Invoke-AutoKey $app 'ctrl+W'
+    $null = Invoke-AutoFrames $app 2
+    Assert ((Find-Item $app '##viewer_wrap_state').label -eq 'on##viewer_wrap_state') "Ctrl+W did not turn wrapping on"
+    Click $app '##viewer_mview'; Click $app '##viewer_font'
+    $null = Must-Item $app '##viewer_font_face'
+    Click $app '##viewer_font_face'
+    $null = Must-Item $app '##viewer_font_face_1'
+    Invoke-AutoKey $app 'Escape'
+    $null = Invoke-AutoFrames $app 3
+    Assert ((Find-Item $app '##viewer_text') -ne $null) "Esc with the face list open closed the viewer"
+    Click $app '##viewer_font_face'; Click $app '##viewer_font_face_1'; Click $app '##viewer_font_ok'
+    Assert ((Find-Item $app '##viewer_font_state').label -eq 'Segoe UI 16##viewer_font_state') "the face did not switch to Segoe UI"
+    Click $app '##viewer_mview'
+    $null = Must-Item $app '##viewer_enc0'
+    Invoke-AutoKey $app 'Escape'
+    $null = Invoke-AutoFrames $app 3
+    Assert ((Find-Item $app '##viewer_text') -ne $null) "Esc with the View menu open closed the viewer"
+    Click $app '##viewer_text'
+    Invoke-AutoKey $app 'Escape'
+    $null = Invoke-AutoFrames $app 3
+    Assert ((Find-Item $app '##viewer_text') -eq $null) "the second Esc did not close the viewer"
+}
+
+# ---------- 26 ----------
+# Esc with a drop-down open closes the list only; the next Esc cancels the dialog (extract: 255, compress: 0).
+Test-Case 'esc_closes_dropdown_first' {
+    $d = New-TestDir 'escdrop'
+    $f = Join-Path $d 'one.txt'
+    Set-Content -LiteralPath $f -Value 'one' -Encoding ASCII
+    $ea = Join-Path $d 'e.7z'
+    SevenZip @('a', $ea, $f, '-bso0', '-bsp0')
+    $app = Must-Connect (Start-App @('x', (Q $ea)))
+    $null = Must-Item $app '##extract_ok' 15
+    Click $app '##extract_mode'
+    $null = Must-Item $app '##extract_mode_0'
+    Invoke-AutoKey $app 'Escape'
+    $null = Invoke-AutoFrames $app 3
+    Assert (-not $app.Process.HasExited -and (Find-Item $app '##extract_ok') -and -not (Find-Item $app '##extract_mode_0')) "Esc on the open list did not close just the list"
+    Invoke-AutoKey $app 'Escape'
+    $code = Wait-Exit $app 15
+    Assert ($code -eq 255) ("the second Esc must cancel the extract dialog (255), got " + $code)
+    $app = Must-Connect (Start-App @('a', (Q $f)))
+    $null = Must-Item $app '##compress_create' 15
+    Click $app '##compress_format'
+    $null = Must-Item $app '##compress_format_1'
+    Invoke-AutoKey $app 'Escape'
+    $null = Invoke-AutoFrames $app 3
+    Assert (-not $app.Process.HasExited -and (Find-Item $app '##compress_create')) "Esc on the format list closed the compress dialog"
+    Invoke-AutoKey $app 'Escape'
+    $code = Wait-Exit $app 15
+    Assert ($code -eq 0) ("Esc cancels the compress dialog with 0 (C# Add), got " + $code)
+}
+
+# ---------- 27 ----------
+# A slow open (1 GB of zeros as .tar.gz): its progress shows with Cancel - without a main window (exit 255), in
+# the main window itself (Enter on the file: the folder stays) and for Info on the file; the extract queue's
+# progress is ###queue<n>. A cancelled open stops for real: no half-written temp folder is left.
+Test-Case 'open_cancel' {
+    $d = New-TestDir 'opencancel'
+    $big = New-Dir (Join-Path $d 'big')
+    $zero = Join-Path $big 'zero.bin'
+    $fs = [System.IO.File]::Create($zero); $fs.SetLength(1GB); $fs.Close()
+    $tar = Join-Path $d 'big.tar'; $tgz = Join-Path $d 'big.tar.gz'
+    Push-Location $big
+    try { SevenZip @('a', '-ttar', $tar, 'zero.bin', '-bso0', '-bsp0') } finally { Pop-Location }
+    SevenZip @('a', '-tgzip', '-mx1', $tgz, $tar, '-bso0', '-bsp0')
+    Remove-Item -LiteralPath $zero, $tar
+    $mpTemp = Join-Path $env:TEMP 'MakePack'
+    $before = @(Get-ChildItem $mpTemp -Directory -ErrorAction SilentlyContinue).Count
+
+    $app = Must-Connect (Start-App @('x', (Q $tgz), '--sub'))
+    $null = Must-Item $app '##opening_cancel' 15
+    Assert ((Get-AutoText $app '##opening_status') -like '*big.tar.gz*') ("the progress does not name the file: " + (Dialog-Text $app))
+    $t0 = Get-Date
+    Click $app '##opening_cancel'
+    $code = Wait-Exit $app 30
+    Assert ($code -eq 255) ("Cancel while opening must exit 255, got " + $code)
+    Assert (((Get-Date) - $t0).TotalSeconds -lt 10) "the cancelled open did not stop (it ran to the end)"
+
+    $app = Must-Connect (Start-App @((Q $d)))
+    $null = Must-Item $app 'big.tar.gz###r' 15
+    Invoke-AutoClick $app 'big.tar.gz###r' -Kind dblclick
+    $null = Must-Item $app '##opening_cancel' 15
+    Click $app '##opening_cancel'
+    $null = Invoke-AutoFrames $app 5
+    Assert (-not $app.Process.HasExited -and (Wait-Item $app 'big.tar.gz###r' 10)) ("the folder is not back after Cancel: " + (Dialog-Text $app))
+    Click $app 'big.tar.gz###r'
+    Click $app '###mtools'; Click $app '###m_info'
+    $null = Must-Item $app '##opening_cancel' 15
+    Click $app '##opening_cancel'
+    $null = Invoke-AutoFrames $app 5
+    Assert (-not $app.Process.HasExited -and (Find-Item $app '###mcommands')) "the main window did not survive Cancel on Info's open"
+    $null = Stop-AutoApp $app
+
+    $app = Must-Connect (Start-App @('x', (Q $tgz), '--sub'))
+    $null = Must-Item $app '##queue_cancel' 60
+    $q = @(Windows $app | Where-Object { $_ -match '###queue\d+$' })
+    Assert ($q.Count -eq 1) ("the extract queue's progress is not ###queue<n>: " + (Titles (Windows $app)))
+    Click $app '##queue_cancel'
+    $code = Wait-Exit $app 30
+    Assert ($code -eq 255) ("Cancel in the queue must exit 255, got " + $code)
+    Start-Sleep -Milliseconds 500
+    $after = @(Get-ChildItem $mpTemp -Directory -ErrorAction SilentlyContinue).Count
+    Assert ($after -le $before) ("temp folders left behind in " + $mpTemp + ": " + $before + " before, " + $after + " after")
+}
+
+# ---------- 28 ----------
+# The compress dialog's own guards and memory: Show password disables Confirm, a volume under 64 KB is flagged
+# and blocks Create, a level picked from the drop-down shows and is remembered with the method; the archive tests
+# with its password.
+Test-Case 'compress_dialog_guards' {
+    $d = New-TestDir 'cguards'
+    $src = New-Dir (Join-Path $d 'src')
+    Set-Content -LiteralPath (Join-Path $src 'one.txt') -Value 'hello one' -Encoding ASCII
+    $app = Must-Connect (Start-App @('a', (Q (Join-Path $src 'one.txt'))))
+    $null = Must-Item $app '##compress_create' 15
+    Type-Into $app '##compress_password' 'abc'
+    Click $app '##compress_show_password'
+    Assert ([bool](Find-Item $app '##compress_confirm').disabled) "Show password does not disable Confirm"
+    Type-Into $app '##compress_volumes' '10k'
+    $null = Must-Item $app '##compress_volume_error'
+    Assert ([bool](Find-Item $app '##compress_create').disabled) "a 10 KB volume size does not disable Create"
+    Click $app '##compress_volumes'; Invoke-AutoKey $app 'ctrl+A'; Invoke-AutoKey $app 'Backspace'
+    Click $app '##compress_advanced'
+    $null = Must-Item $app '##compress_method'
+    Click $app '##compress_level'; Click $app '##compress_level_5'   # Ultra
+    $lv = Get-AutoText $app '##compress_level'
+    $ultra = (@(0x0423, 0x043B, 0x044C, 0x0442, 0x0440, 0x0430) | ForEach-Object { [char]$_ }) -join ''
+    Assert ($lv -eq 'Ultra' -or $lv -eq $ultra) ("the level drop-down shows " + $lv)
+    Click $app '##compress_method'
+    Click $app '##compress_method_1'
+    Click $app '##compress_create'
+    $code = Wait-Exit $app 30
+    $out = Join-Path $src 'one.7z'
+    Assert ($code -eq 0 -and (Test-Path -LiteralPath $out)) ("Create: exit " + $code + ", " + $out + " exists: " + (Test-Path -LiteralPath $out))
+    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $null = & $SevenZ t '-pabc' $out -bso0 -bsp0 2>&1
+    $rc = $LASTEXITCODE; $ErrorActionPreference = $prev
+    Assert ($rc -eq 0) ("7z.exe cannot test the archive with its password (" + $rc + ")")
+    $js = Get-Content -LiteralPath $env:MAKEPACK_SETTINGS -Raw | ConvertFrom-Json
+    Assert ($js.Level -eq 'Ultra' -and $js.Method -eq 'Lzma') ("not remembered: Level=" + $js.Level + " Method=" + $js.Method)
+}
+
+# ---------- 29 ----------
+# The main window's Test and Find: Test says OK, Find finds a text inside the archive, View opens the viewer on
+# that entry, and the viewer's own Find says when nothing matches.
+Test-Case 'find_in_archive' {
+    $d = New-TestDir 'findarc'
+    $src = New-Dir (Join-Path $d 'src')
+    Set-Content -LiteralPath (Join-Path $src 'one.txt') -Value 'hello one, needle inside' -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $src 'two.txt') -Value 'second file' -Encoding ASCII
+    $a7z = Join-Path $d 'a.7z'
+    Push-Location $src
+    try { SevenZip @('a', $a7z, 'one.txt', 'two.txt', '-bso0', '-bsp0') } finally { Pop-Location }
+    $app = Must-Connect (Start-App @((Q $a7z)))
+    $null = Must-Item $app 'one.txt###r' 15
+    Click $app '###mcommands'; Click $app '###m_test'
+    $null = Must-Item $app '##msg_text' 15
+    Assert (Has-Exact (Screen-Texts $app) (S-Text 'TestOk')) ("Test did not say OK: " + (Dialog-Text $app))
+    Click $app '##msg_ok'
+    Click $app '###mtools'; Click $app '###m_find'
+    $null = Must-Item $app '##find_go'
+    Type-Into $app '##find_text' 'needle'
+    Click $app '##find_go'
+    $r0 = Must-Item $app '##find_r0' 15
+    Assert ($r0.label -like '*one.txt*') ("Find did not find one.txt by its text: " + $r0.label)
+    Click $app '##find_r0'; Click $app '##find_view'
+    $null = Must-Item $app '##viewer_text'
+    Assert (@(Windows $app | Where-Object { $_ -like '*###viewer*' }).Count -gt 0) ("no viewer on the found entry: " + (Titles (Windows $app)))
+    Click $app '##viewer_text'
+    Invoke-AutoKey $app 'ctrl+F'
+    Type-Into $app '##viewer_find_text' 'zzz-missing'
+    Click $app '##viewer_find_go'
+    $null = Must-Item $app '##msg_text'
+    Click $app '##msg_ok'
+}
+
+# ---------- 30 ----------
+# Passwords asked in their own place: bodies encrypted with a readable list ask before extracting (x --sub, no
+# dialog); t -p asks in its own window before any GUI and tests with that password.
+Test-Case 'password_windows' {
+    $d = New-TestDir 'pwwin'
+    $src = New-Dir (Join-Path $d 'src')
+    Set-Content -LiteralPath (Join-Path $src 'one.txt') -Value 'secret one' -Encoding ASCII
+    $enc2 = Join-Path $d 'enc2.7z'
+    Push-Location $src
+    try { SevenZip @('a', '-pSecret1', '-mhe=off', $enc2, 'one.txt', '-bso0', '-bsp0') } finally { Pop-Location }
+    $app = Must-Connect (Start-App @('x', (Q $enc2), '--sub'))
+    Drive-Password $app 'Secret1'
+    $code = Wait-Exit $app 30
+    Assert ($code -eq 0 -and (Test-Path -LiteralPath (Join-Path $d 'enc2\one.txt'))) ("x --sub with the password: exit " + $code)
+    $app = Must-Connect (Start-App @('t', '-p', (Q $enc2)))
+    Drive-Password $app 'Secret1'
+    $code = Wait-Exit $app 30
+    Assert ($code -eq 0) ("t -p with the right password must exit 0, got " + $code)
+}
+
+# ---------- 31 ----------
+# The Associations dialog over the default 900x600 main window: its OK / Cancel footer stays on screen (the
+# extension table gives up height instead).
+Test-Case 'assoc_fits_window' {
+    $d = New-TestDir 'assocfit'
+    $app = Must-Connect (Start-App @((Q $d)))
+    $null = Must-Item $app '###moptions' 15
+    Click $app '###moptions'; Click $app '###m_assoc'
+    $null = Must-Item $app '##assoc_ok' 10
+    $null = Invoke-AutoFrames $app 6
+    $ok = Find-Item $app '##assoc_ok'; $cancel = Find-Item $app '##assoc_cancel'
+    $main = @(Get-AutoItems $app -Windows | Where-Object { $_.name -like '*###main' }) | Select-Object -First 1
+    Assert ($ok.visible -and $cancel.visible -and $ok.y1 -le $main.y1) ("the footer is off screen: OK y1=" + $ok.y1 + " visible=" + $ok.visible + ", window y1=" + $main.y1)
+    Click $app '##assoc_cancel'
+    Assert ((Wait-Item $app '###mcommands' 5) -ne $null) "the main window did not come back after Cancel"
 }
 
 # ---------- summary ----------

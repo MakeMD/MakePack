@@ -100,7 +100,7 @@ const Inbox = struct {
         };
         ib.lock.lock();
         defer ib.lock.unlock();
-        ib.lists.append(ib.gpa, copy) catch freeList(ib.gpa, copy);
+        ib.lists.append(ib.gpa, copy) catch kit.win.freeList(ib.gpa, copy);
     }
 
     fn take(ib: *Inbox) std.ArrayList([][]u8) {
@@ -113,13 +113,8 @@ const Inbox = struct {
 
     fn deinit(ib: *Inbox) void {
         var left = ib.take();
-        for (left.items) |l| freeList(ib.gpa, l);
+        for (left.items) |l| kit.win.freeList(ib.gpa, l);
         left.deinit(ib.gpa);
-    }
-
-    fn freeList(gpa: Allocator, l: [][]u8) void {
-        for (l) |a| gpa.free(a);
-        gpa.free(l);
     }
 };
 
@@ -150,6 +145,8 @@ fn gui(gpa: Allocator, io: std.Io, mode: Mode, hive: assoc.Hive) !u8 {
     // Engine's static constructor: 7z.dll next to the exe. A failure is reported once the window is up.
     const engine_err: ?anyerror = if (engine.init(gpa, io, exe_dir)) null else |e| e;
     defer engine.deinit(io); // temp dirs (ToTemp, drag-out, nested archives)
+    // What killed runs left in %TEMP%\MakePack, off the UI thread (a stale nested .tar can be big).
+    if (std.Thread.spawn(.{}, engine.sweepStaleTemps, .{io})) |t| t.detach() else |_| {}
 
     const app = try kit.app.App.init(gpa, .{
         .title = S.app,
@@ -189,7 +186,7 @@ fn frame(app: *kit.app.App) void {
     var lists = inbox.take();
     for (lists.items) |l| {
         ui.dialogs.dispatch(@ptrCast(l));
-        Inbox.freeList(gpa, l);
+        kit.win.freeList(gpa, l);
     }
     lists.deinit(gpa);
 
@@ -244,11 +241,4 @@ fn filesDropped(app: *kit.app.App, paths: []const []const u8, pos: im.ImVec2) vo
     const ui = app.userData(Ui);
     if (ui.dialogs.filesDropped(paths)) return;
     if (ui.mw) |*m| m.filesDropped(paths, pos);
-}
-
-comptime { // ponytail: type-checks every stubbed contract entry point until G1/G2 call them all; delete then.
-    for (std.meta.declarations(Dialogs)) |n| _ = &@field(Dialogs, n);
-    for (std.meta.declarations(MainWindow)) |n| _ = &@field(MainWindow, n);
-    for (std.meta.declarations(C.Request)) |n| _ = &@field(C.Request, n);
-    for (std.meta.declarations(C.Ctx)) |n| _ = &@field(C.Ctx, n);
 }

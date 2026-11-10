@@ -688,9 +688,8 @@ fn expectRun(want: u8, args: []const []const u8, ask: *const fn (Allocator, []co
 
 test "cli: which argument lists are scripts (the rest go to the GUI)" {
     const gui = [_][]const []const u8{
-        &.{}, &.{"t"}, &.{"l"}, &.{ "x", "a.7z" }, &.{ "x", "a.7z", "--here" }, &.{ "a", "f.txt" },
-        &.{ "a", "--quick", "f" }, &.{ "a", "--profile", "n", "f" }, &.{ "convert", "f" }, &.{"C:\\a.7z"},
-        &.{ "a", "" },
+        &.{},                      &.{"t"},                          &.{"l"},              &.{ "x", "a.7z" }, &.{ "x", "a.7z", "--here" }, &.{ "a", "f.txt" },
+        &.{ "a", "--quick", "f" }, &.{ "a", "--profile", "n", "f" }, &.{ "convert", "f" }, &.{"C:\\a.7z"},    &.{ "a", "" },
     };
     for (gui) |args| {
         try testing.expect(!cli.headless(args));

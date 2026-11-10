@@ -5,7 +5,6 @@ const std = @import("std");
 const kit = @import("kit");
 const D = @import("dialogs.zig");
 const C = @import("ctx.zig");
-const P = @import("dlg_prompt.zig");
 const R = @import("dlg_run.zig");
 const viewer_dlg = @import("dlg_viewer.zig");
 const types = @import("../core/types.zig");
@@ -13,7 +12,6 @@ const sevenzip = @import("../core/sevenzip.zig");
 
 const S = C.S;
 const engine = C.engine;
-const assoc = C.assoc;
 const settings = C.settings;
 const im = kit.im;
 const w = kit.w;
@@ -204,7 +202,7 @@ pub const Find = struct {
                 f.flush();
                 f.last_flush = now;
             }
-            if (f.job.isFinished()) f.finish();
+            if (f.job.takeFinished()) f.finish();
             d.ctx.app.requestFrames(1);
         }
         const cap: f32 = 144;
@@ -266,7 +264,7 @@ pub const Find = struct {
         }
 
         var sb: [1600]u8 = undefined;
-        D.textItem(f.statusText(&sb), "find_status", 0);
+        kit.ui.text("find_status", f.statusText(&sb), null, 0);
 
         const find_text = if (f.running) S.stop.get() else S.tbFind.get();
         D.alignRight(&.{ find_text, S.locate.get(), S.tbView.get(), S.close.get() });
@@ -326,7 +324,6 @@ pub const Find = struct {
     }
 
     fn finish(f: *Find) void {
-        f.job.join();
         f.running = false;
         f.flush();
         f.current_len = 0;
@@ -493,7 +490,7 @@ pub const Find = struct {
 
     // ponytail (C#): archives inside archives are not opened; engine.open's own unwrapping (x.tar.gz, .001) applies.
     fn inArchive(f: *Find, path: []const u8) !void {
-        const a = engine.open(f.gpa, f.io, path, null, null) catch {
+        const a = engine.open(f.gpa, f.io, path, null, .{ .cancel = &f.job.cancel_flag }, null) catch {
             _ = f.skipped.fetchAdd(1, .acq_rel); // encrypted file list, damaged, locked
             return;
         };
