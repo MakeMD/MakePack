@@ -1,6 +1,6 @@
 # MakePack
 
-Легкий архіватор для Windows 10/11 — C#/WinForms поверх `7z.dll` від 7-Zip.
+Легкий архіватор для Windows 10/11 — Zig + Dear ImGui (MakeKit) поверх `7z.dll` від 7-Zip. Один exe без рантайму; стара C#/WinForms-версія лежить у `legacy/`.
 
 ## Формати
 
@@ -20,17 +20,18 @@
 - **Вигляд.** Ctrl+H — плаский список усіх файлів архіву; ще є режими «Список» і «Таблиця». Розмір вікна, дерево, режим і остання тека запам'ятовуються.
 - **Іконки тулбара** поки стокові, Windows. Свої іконки кладуться PNG-файлами в `icons\` поруч з exe, перезбирати нічого не треба; список потрібних — [docs/ICONS-NEEDED.md](docs/ICONS-NEEDED.md).
 
-Перевірки вікна: `--selftest` (блоки `gui`, `packed`), `tools\guismoke.ps1` (знімки на моніторі 1; клавіші надсилає лише тоді, коли MakePack на передньому плані), `tools\uiadump.ps1` (UIA-дерево + скріншот будь-якого вікна).
+Перевірки: `zig build test`, `MakePack.exe --selftest`, `tools\bugtest.ps1` (чорна скринька: CLI і вікна через автоматизацію MakeKit, у пісочниці — власні `MAKEPACK_INSTANCE`, `MAKEPACK_SETTINGS`, `MAKEPACK_REGROOT`, тека в `%TEMP%`; справжні мишу й клавіатуру не чіпає, вікна — на моніторі `-Screen`, типово 1), `tools\guismoke.ps1` (знімки головного вікна після натискань), `tools\settingstest.ps1` (збереження налаштувань). `tools\dragtest.ps1` рухає справжню мишу — лише вручну. `tools\uiadump.ps1` — UIA-дерево + скріншот будь-якого чужого вікна (ImGui-вікна MakePack UIA не бачить).
 
 ## Збірка
 
 ```powershell
-tools\build.ps1                  # версія 1.0.0
+tools\build.ps1                  # версія 2.0.0
 tools\build.ps1 -Version 1.2.3   # своя версія
 tools\build.ps1 -SkipIcon        # без перегенерації іконки
+tools\build.ps1 -NoSign          # пакет меню Windows 11 без підпису (суха збірка, такий пакет не встановиться)
 ```
 
-Потрібні .NET SDK (win-x64), Inno Setup 6, а для меню Windows 11 — CMake, MSVC і Windows SDK (одноразово `tools\new_cert.ps1`). Результат: `dist\MakePack-Setup-<версія>.exe`.
+Потрібні Zig 0.17.1 у `%LOCALAPPDATA%\Programs\zig\0.17.1\`, сусідня тека `..\MakeKit`, Inno Setup 6 і Windows SDK (`makeappx`, `signtool`; для підпису одноразово `tools\new_cert.ps1`). Python потрібен лише для іконки. Кроки: `zig build -Doptimize=ReleaseSafe` → `dist\app` (MakePack.exe, 7z.dll, 7z.sfx) → `tools\build_shell.ps1` → `dist\shell` → ISCC. Результат: `dist\MakePack-Setup-<версія>.exe`.
 
 ## Контекстне меню та асоціації
 
@@ -56,7 +57,7 @@ tools\build.ps1 -SkipIcon        # без перегенерації іконк�
 
 Прибрати: зняти прапорець задачі при повторному встановленні або видалити MakePack. Сертифікат лишається в довірених (видалення потребувало б ще одного UAC); прибрати вручну: `certutil -delstore TrustedPeople MakeMD` в адмінському терміналі.
 
-Збірка: `tools\new_cert.ps1` один раз (сертифікат у `shell\cert\`, пароль у `.env`), далі `tools\build.ps1` сам викликає `tools\build_shell.ps1` (CMake + MSVC, Windows SDK). Той самий скрипт проганяє `shell\test\harness.cpp` — перевірку меню й командних рядків без встановлення.
+Збірка: `tools\new_cert.ps1` один раз (сертифікат у `shell\cert\`, пароль у `.env`), далі `tools\build.ps1` сам викликає `tools\build_shell.ps1` (DLL на Zig — `shell\shell.zig`, пакет — `makeappx` і `signtool` з Windows SDK). Той самий скрипт проганяє `shell\test\harness.cpp` (`zig build test-shell`) — перевірку меню й командних рядків без встановлення.
 
 Кнопка **«Асоціації…»** в самому додатку відкриває діалог із прапорцем на кожне розширення — як Options→System у 7-Zip. Додаток сам пише реєстр (тільки HKCU, без прав адміністратора), показує поточного власника типу і позначає ті, які Windows або інша програма вже закріпили за собою.
 

@@ -3,7 +3,7 @@
 //! stdout, then "ALL OK" or "N FAILED"; exit code 0 / 1 (as C#). The Recycle Bin is used only for files under that
 //! folder, and whatever the run sent there is put back (fromRecycleBin). The SFX run happens on a hidden desktop.
 //! `runIn` is the same run for `zig build test-engine` (src/test_engine.zig).
-//! Not ported: the "gui" check (MainForm; GUI phase) - printed as "gui: deferred", not a failure.
+//! "gui" drives the main window's model (src/ui/mw_model.zig) without a window, as C# drove a MainForm never shown.
 //! Beyond C#: "registry" (MP-C assoc verbs under HKCU\Software\MakePackTest-<random>) and "single" (mutex + pipe
 //! on a private name).
 const std = @import("std");
@@ -15,6 +15,7 @@ const S = @import("strings.zig");
 const cli = @import("platform/cli.zig");
 const assoc = @import("platform/assoc.zig");
 const single = @import("platform/single.zig");
+const mw = @import("ui/mw_model.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -106,7 +107,7 @@ pub fn runIn(gpa: Allocator, io: Io, engine_dir: []const u8, root: []const u8, o
     t.check("packed", packedCheck);
     t.check("registry", registryCheck);
     t.check("single", singleCheck);
-    t.say("gui: deferred (MainForm: GUI phase)", .{});
+    t.check("gui", guiCheck);
     return t.fails;
 }
 
@@ -1752,6 +1753,125 @@ fn singleCheck(t: *T) !void {
     try t.must(ok and got.args != null and got.args.?.len == sent.len, "the arguments did not arrive over the pipe", .{});
     for (sent, got.args.?) |want, g| try t.must(std.mem.eql(u8, want, g), "'{s}' arrived as '{s}'", .{ want, g });
     t.say("OK single (mutex owner/client, pipe round trip; private name)", .{});
+}
+
+// ---- gui (MP-G1): the main window's model, never shown -------------------------------------------------------
+
+/// Program.SelfTest "gui": disk and archive listings, "..", history, nested archives, flat view, folder sizes,
+/// the status line and the address; then the Ukrainian plurals of the status line.
+fn guiCheck(t: *T) !void {
+    const gui = try t.p("gui");
+    try Io.Dir.cwd().createDirPath(t.io, try join(t.ar, &.{ gui, "alpha" }));
+    try Io.Dir.cwd().createDirPath(t.io, try join(t.ar, &.{ gui, "beta", "inner" }));
+    try pack(t, &.{t.src}, try join(t.ar, &.{ gui, "pack.zip" }), .Zip, null, false);
+    const inner = try t.p("inner.zip");
+    try pack(t, &.{try join(t.ar, &.{ t.src, "a.txt" })}, inner, .Zip, null, false);
+    try pack(t, &.{inner}, try join(t.ar, &.{ gui, "outer.7z" }), .SevenZip, null, false);
+
+    var m = try mw.Model.init(t.gpa, t.io, gui);
+    defer m.deinit();
+    try m.go(.{ .path = gui }, null, false);
+    try t.must(eqlS(try guiNames(t, &m), "..|alpha|beta|outer.7z|pack.zip"), "disk list: {s}", .{try guiNames(t, &m)});
+    try guiOpen(t, &m, "pack.zip");
+    try t.must(eqlS(try guiNames(t, &m), "..|src"), "archive root: {s}", .{try guiNames(t, &m)});
+    var total: u64 = 0;
+    {
+        var dir = try Io.Dir.cwd().openDir(t.io, t.src, .{ .iterate = true });
+        defer dir.close(t.io);
+        var walker = try dir.walk(t.gpa);
+        defer walker.deinit();
+        while (try walker.next(t.io)) |e| if (e.kind == .file) {
+            total += size(t, try join(t.ar, &.{ t.src, e.path }));
+        };
+    }
+    var g: [40]u8 = undefined;
+    try t.must(eqlS(try guiCell(t, &m, "src", .size), S.group(&g, total)), "folder size {s}, files {d}", .{ try guiCell(t, &m, "src", .size), total });
+    try t.must((try guiCell(t, &m, "src", .@"packed")).len > 0, "the Packed column is empty", .{});
+    var sb: [512]u8 = undefined;
+    var b1: [64]u8 = undefined;
+    var b2: [64]u8 = undefined;
+    const status = m.statusText(&sb);
+    try t.must(std.mem.find(u8, status, S.foldersN(&b1, 1)) != null and std.mem.find(u8, status, S.bytes(&b2, total)) != null, "status: {s}", .{status});
+    var ab: [1024]u8 = undefined;
+    const address = m.addressText(&ab);
+    try t.must(std.mem.find(u8, address, "pack.zip") != null and std.mem.find(u8, address, "ZIP") != null, "address: {s}", .{address});
+    var tb: [1024]u8 = undefined;
+    try t.must(std.mem.find(u8, m.titleText(&tb), "pack.zip") != null, "title: {s}", .{m.titleText(&tb)});
+    try guiOpen(t, &m, "src");
+    const in_src = try guiNames(t, &m);
+    try t.must(std.mem.find(u8, in_src, "|sub") != null and std.mem.find(u8, in_src, "|a.txt") != null and std.mem.find(u8, in_src, "|void") != null, "inside src: {s}", .{in_src});
+    try m.up();
+    try t.must(eqlS(try guiNames(t, &m), "..|src") and eqlS(guiChosen(&m), "src"), "up inside the archive: {s} chosen {s}", .{ try guiNames(t, &m), guiChosen(&m) });
+    try m.up();
+    try t.must(std.mem.find(u8, try guiNames(t, &m), "|alpha") != null and eqlS(guiChosen(&m), "pack.zip"), "up out of the archive: {s}", .{guiChosen(&m)});
+    try m.goBack();
+    try t.must(eqlS(try guiNames(t, &m), "..|src"), "back into the archive: {s}", .{try guiNames(t, &m)});
+    try m.goForward();
+    try t.must(std.mem.find(u8, try guiNames(t, &m), "|alpha") != null, "forward to the folder: {s}", .{try guiNames(t, &m)});
+    try guiOpen(t, &m, "outer.7z");
+    try guiOpen(t, &m, "inner.zip");
+    try t.must(eqlS(try guiNames(t, &m), "..|a.txt"), "nested archive: {s}", .{try guiNames(t, &m)});
+    try m.up();
+    try t.must(eqlS(guiChosen(&m), "inner.zip") and std.mem.find(u8, m.addressText(&ab), "outer.7z") != null, "up from a nested archive: {s}", .{m.addressText(&ab)});
+    try m.up();
+    try t.must(eqlS(guiChosen(&m), "outer.7z") and std.mem.find(u8, try guiNames(t, &m), "|alpha") != null, "up from the outer archive: {s}", .{guiChosen(&m)});
+    try guiOpen(t, &m, "pack.zip");
+    m.flat = true;
+    try m.fill(false, null);
+    const flat = try guiNames(t, &m);
+    try t.must(std.mem.find(u8, flat, "|b.bin") != null and std.mem.find(u8, flat, "|тест ïé.txt") != null and std.mem.find(u8, flat, "|src") == null, "flat view: {s}", .{flat});
+    m.flat = false;
+    try m.fill(false, null);
+    try t.must(eqlS(try guiNames(t, &m), "..|src"), "flat view off: {s}", .{try guiNames(t, &m)});
+    if (S.uk) for ([_]struct { u64, []const u8 }{ .{ 1, "файл" }, .{ 2, "файли" }, .{ 5, "файлів" }, .{ 11, "файлів" }, .{ 12, "файлів" }, .{ 21, "файл" }, .{ 22, "файли" }, .{ 111, "файлів" } }) |c| {
+        const n, const word = c;
+        const s = S.filesN(&b1, n);
+        try t.must(std.mem.endsWith(u8, s, word) and s[s.len - word.len - 1] == ' ', "{d} -> {s}", .{ n, s });
+    };
+    t.say("OK gui (disk, archive, folder sizes, packed, status, up/back/forward, nested, flat, plurals)", .{});
+}
+
+fn eqlS(a: []const u8, b: []const u8) bool {
+    return std.mem.eql(u8, a, b);
+}
+
+fn guiNames(t: *T, m: *const mw.Model) ![]const u8 {
+    var list: std.ArrayList([]const u8) = .empty;
+    for (m.rows.items) |r| try list.append(t.ar, r.name);
+    return std.mem.join(t.ar, "|", list.items);
+}
+
+/// MainForm.Chosen: the one selected row ("" when none or several).
+fn guiChosen(m: *const mw.Model) []const u8 {
+    var found: []const u8 = "";
+    var n: usize = 0;
+    for (m.rows.items) |r| if (r.selected) {
+        found = r.name;
+        n += 1;
+    };
+    return if (n == 1) found else "";
+}
+
+fn guiCell(t: *T, m: *const mw.Model, name: []const u8, c: mw.Col) ![]const u8 {
+    for (m.rows.items) |r| if (eqlS(r.name, name)) return t.ar.dupe(u8, m.cell(try t.ar.alloc(u8, 64), r, c));
+    return "";
+}
+
+/// MainForm.Open(name): Enter on that row; an archived file goes through a temp dir first (ToTemp, no window).
+fn guiOpen(t: *T, m: *mw.Model, name: []const u8) !void {
+    for (m.rows.items, 0..) |r, i| if (eqlS(r.name, name)) {
+        switch (try m.activate(i, false)) {
+            .extract => |x| {
+                const rel = try t.ar.dupe(u8, x.rel);
+                const dir = try m.toTempSync(x.index);
+                defer t.gpa.free(dir);
+                _ = try m.afterTemp(dir, rel, x.as_archive);
+            },
+            else => {},
+        }
+        return;
+    };
+    try t.must(false, "no row {s}", .{name});
 }
 
 test "contract compiles" {

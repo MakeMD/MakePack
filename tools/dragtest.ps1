@@ -1,15 +1,26 @@
 # MakePack drag-and-drop smoke with REAL mouse input (SendInput), both directions. Pure ASCII. PowerShell 5.1.
-# Usage: tools\dragtest.ps1 [-Exe <path>]
-# Opens its own Explorer window and its own MakePack windows side by side on the primary screen, drags between
-# them and checks the result on disk. Closes only the windows it opened. Screenshots: dist\drag-*.png.
-param([string]$Exe = "$PSScriptRoot\..\dist\publish\MakePack.exe")
+#
+#   *** MANUAL ONLY ***  It moves the real mouse pointer and presses the real left button. Run it yourself, by hand,
+#   when nobody (no person, no agent, no other test) is using this desktop, and never from bugtest.ps1, CI or an
+#   automation session. Over RDP it moves the pointer of the remote session.
+#
+# Usage: tools\dragtest.ps1 [-Exe <path>] [-Screen <n>]
+# Opens its own Explorer window and its own MakePack windows side by side on \\.\DISPLAY<Screen>, drags between
+# them and checks the result on disk. Closes only the windows it opened. Screenshots: zig-out\shots\drag-*.png.
+# The ImGui window has no accessibility tree and MakeKit automation ignores real input, so it measures the layout
+# first in an automation run (MAKEKIT_AUTOMATION=1, read-only), then drags in a plain run with the same saved
+# window bounds. Foreground guard: before every press the window under the start point and under the drop point
+# must belong to the expected process (our Explorer window / our MakePack) and our window must be in front;
+# otherwise it stops without sending anything - stray input must never land in the user's apps.
+# Sandbox: private MAKEPACK_INSTANCE, MAKEPACK_SETTINGS and MAKEPACK_REGROOT, files only in %TEMP%\makepack-test-*.
+param([string]$Exe = "$PSScriptRoot\..\zig-out\bin\MakePack.exe", [ValidateRange(1, 9)][int]$Screen = 1)
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing
 if (-not ('Mp.Mouse' -as [type])) {
     Add-Type -Namespace Mp -Name Mouse -UsingNamespace System.Text, System.Threading, System.Collections.Generic -MemberDefinition @'
 [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint data, flags, time; public IntPtr extra; }
 [StructLayout(LayoutKind.Sequential)] struct INPUT { public uint type; public MOUSEINPUT mi; }
+[StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
 [DllImport("user32.dll")] static extern uint SendInput(uint n, INPUT[] i, int size);
 [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
 [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v);
@@ -17,6 +28,12 @@ if (-not ('Mp.Mouse' -as [type])) {
 [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
 [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
+[DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
+[DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
+[DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
 delegate bool EnumProc(IntPtr h, IntPtr l);
 [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc p, IntPtr l);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
@@ -32,6 +49,10 @@ public static long[] TopWindows(string cls) {
     }, IntPtr.Zero);
     return r.ToArray();
 }
+
+// The top-level window under a screen point, and its process.
+public static long RootAt(int x, int y) { var p = new POINT { X = x, Y = y }; return GetAncestor(WindowFromPoint(p), 2).ToInt64(); }
+public static uint PidOf(long h) { uint pid; GetWindowThreadProcessId(new IntPtr(h), out pid); return pid; }
 
 static void Send(int x, int y, uint flags) {
     int vx = GetSystemMetrics(76), vy = GetSystemMetrics(77), vw = GetSystemMetrics(78), vh = GetSystemMetrics(79);
@@ -54,39 +75,40 @@ public static void Drag(int x1, int y1, int x2, int y2) {
     for (int k = 0; k < 20; k++) { Send(x2 + (k % 2), y2, 0); Thread.Sleep(30); }
     Send(x2, y2, 0x0004);                                         // LEFTUP
 }
-
 '@
 }
-[void][Mp.Mouse]::SetProcessDpiAwarenessContext([IntPtr](-4))   # per-monitor v2: UIA rects == SendInput pixels
+[void][Mp.Mouse]::SetProcessDpiAwarenessContext([IntPtr](-4))   # per-monitor v2: UIA / ImGui pixels == SendInput pixels
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing, System.Windows.Forms
+. (Join-Path $PSScriptRoot '..\..\MakeKit\tools\imgui-auto.ps1')
+Set-StrictMode -Off
 
 $AT = [System.Windows.Automation.AutomationElement]
 $TS = [System.Windows.Automation.TreeScope]
 $CT = [System.Windows.Automation.ControlType]
 $Exe = (Resolve-Path -LiteralPath $Exe).Path
 $SevenZ = (Resolve-Path (Join-Path $PSScriptRoot '..\third_party\7zip\7z.exe')).Path
-$Dist = (Resolve-Path (Join-Path $PSScriptRoot '..\dist')).Path
+$Shots = Join-Path $PSScriptRoot '..\zig-out\shots'
+New-Item -ItemType Directory -Force $Shots | Out-Null
 $script:fails = 0
 $script:explorer = [IntPtr]::Zero
+$script:procs = New-Object System.Collections.ArrayList
+
+$mon = [System.Windows.Forms.Screen]::AllScreens | Where-Object { $_.DeviceName -like "*DISPLAY$Screen" } | Select-Object -First 1
+if (-not $mon) { throw "no \\.\DISPLAY$Screen" }
+$wa = $mon.WorkingArea
+$half = [int]($wa.Width / 2)
+$mpRect = @($wa.Left, $wa.Top, ($half - 10), ($wa.Height - 40))                 # MakePack: left half
+$exRect = @(($wa.Left + $half), $wa.Top, ($half - 10), ($wa.Height - 40))     # Explorer: right half
+
+$rand = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$root = Join-Path $env:TEMP ('makepack-test-drag-' + $rand)
+$cfg = Join-Path $root 'settings.json'
+$reg = "Software\MakePackTest-$rand"
+$envs = @{ MAKEPACK_INSTANCE = "MakePack-dragtest-$rand"; MAKEPACK_SETTINGS = $cfg; MAKEPACK_REGROOT = $reg; MAKEKIT_DISPLAY = "\\.\DISPLAY$Screen" }
 
 function Log([string]$s) { Write-Host $s }
 function Pass([string]$s) { Write-Host ("PASS " + $s) }
 function Fail([string]$s) { Write-Host ("FAIL " + $s); $script:fails++ }
-
-function Kill-App { Get-Process MakePack -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 400 }
-
-# Graceful first: the app deletes its drag temp folders on a normal exit only.
-function Close-App($p) {
-    if ($p -and -not $p.HasExited) {
-        foreach ($w in (Uia-Windows $p.Id)) { try { [void][Mp.Mouse]::PostMessage([IntPtr]$w.Current.NativeWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) } catch { } }
-        if (-not $p.WaitForExit(5000)) { try { $p.Kill() } catch { } }
-    }
-    Kill-App
-}
-
-function Uia-Windows([int]$ProcId) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition($AT::ProcessIdProperty, $ProcId)
-    @($AT::RootElement.FindAll($TS::Children, $cond))
-}
 
 function Wait-For([scriptblock]$Cond, [int]$Sec) {
     $deadline = (Get-Date).AddSeconds($Sec)
@@ -99,48 +121,83 @@ function Wait-For([scriptblock]$Cond, [int]$Sec) {
     $null
 }
 
-function Main-Window($p, [string]$TitleLike) {
-    Wait-For {
-        foreach ($w in (Uia-Windows $p.Id)) { if ($w.Current.Name -like $TitleLike) { return $w } }
-    } 15
-}
-
-function Find-Item($root, [string[]]$Names) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition($AT::ControlTypeProperty, $CT::ListItem)
-    foreach ($e in $root.FindAll($TS::Descendants, $cond)) {
-        if ($Names -contains $e.Current.Name) { return $e }
-    }
-    $null
-}
-
-# A point on the item's name: past the icon, vertically centred.
-function Grip($el) {
-    $r = $el.Current.BoundingRectangle
-    @([int]($r.X + 28), [int]($r.Y + $r.Height / 2))
-}
-
 function Shot([string]$name) {
     try {
-        $b = New-Object System.Drawing.Bitmap 2560, 1040
+        $b = New-Object System.Drawing.Bitmap $wa.Width, $wa.Height
         $g = [System.Drawing.Graphics]::FromImage($b)
-        $g.CopyFromScreen(0, 0, 0, 0, $b.Size)
+        $g.CopyFromScreen($wa.Left, $wa.Top, 0, 0, $b.Size)
         $g.Dispose()
-        $b.Save((Join-Path $Dist ("drag-" + $name + ".png")), [System.Drawing.Imaging.ImageFormat]::Png)
+        $b.Save((Join-Path $Shots ("drag-" + $name + ".png")), [System.Drawing.Imaging.ImageFormat]::Png)
         $b.Dispose()
     } catch { Log ("  (screenshot failed: " + $_.Exception.Message + ")") }
 }
 
+function Settings-Json { '{ "Window": [' + ($mpRect -join ',') + '], "Maximized": false }' }
+
+# A plain MakePack (real input on): the run that receives the drags.
 function Start-Mp([string[]]$A) {
-    Kill-App
-    if ($A) { Start-Process -FilePath $Exe -ArgumentList $A -PassThru } else { Start-Process -FilePath $Exe -PassThru }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Exe
+    $psi.Arguments = (@($A) | ForEach-Object { '"' + $_ + '"' }) -join ' '
+    $psi.UseShellExecute = $false
+    foreach ($k in $envs.Keys) { $psi.EnvironmentVariables[$k] = [string]$envs[$k] }
+    $psi.EnvironmentVariables.Remove('MAKEKIT_AUTOMATION')
+    $p = [System.Diagnostics.Process]::Start($psi)
+    [void]$script:procs.Add($p)
+    $h = Wait-For { $p.Refresh(); if ($p.MainWindowHandle -ne [IntPtr]::Zero) { $p.MainWindowHandle } } 15
+    if (-not $h) { throw "MakePack (pid $($p.Id)) showed no window" }
+    $p
 }
 
-function Place($winEl, [int]$x) {
-    $h = [IntPtr]$winEl.Current.NativeWindowHandle
-    [void][Mp.Mouse]::ShowWindow($h, 9)   # SW_RESTORE
-    [void][Mp.Mouse]::MoveWindow($h, $x, 0, 1270, 1000, $true)
-    Start-Sleep -Milliseconds 400
+# The layout run: the same settings and arguments with automation on; returns screen rects of the wanted items
+# (name -> @(x0,y0,x1,y1)) and of the file list, then quits (which saves the same window bounds back).
+function Measure-Mp([string[]]$A, [string[]]$Ids) {
+    [IO.File]::WriteAllText($cfg, (Settings-Json))
+    $app = Start-AutoApp -Exe $Exe -Args $A -Env $envs
+    try {
+        $null = Wait-AutoItem $app '###status' 15000
+        foreach ($id in $Ids) { $null = Wait-AutoItem $app $id 10000 }
+        $null = Invoke-AutoFrames $app 5
+        $app.Process.Refresh()
+        $pt = New-Object Mp.Mouse+POINT
+        [void][Mp.Mouse]::ClientToScreen($app.Process.MainWindowHandle, [ref]$pt)
+        $out = @{}
+        foreach ($it in (Get-AutoItems $app)) { foreach ($id in $Ids) { if ($it.label.EndsWith($id)) { $out[$id] = @(($pt.X + $it.x0), ($pt.Y + $it.y0), ($pt.X + $it.x1), ($pt.Y + $it.y1)) } } }
+        $list = @(Get-AutoItems $app -Windows | Where-Object { $_.name -like '*##files_*' }) | Select-Object -First 1
+        if ($list) { $out['list'] = @(($pt.X + $list.x0), ($pt.Y + $list.y0), ($pt.X + $list.x1), ($pt.Y + $list.y1)) }
+        $out
+    } finally { $null = Stop-AutoApp $app }
 }
+
+function Close-App($p) {
+    if ($p -and -not $p.HasExited) {
+        [void][Mp.Mouse]::PostMessage($p.MainWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)   # WM_CLOSE: temp folders go
+        if (-not $p.WaitForExit(5000)) { try { $p.Kill() } catch { } }
+    }
+}
+
+# The foreground guard: start and drop point over the expected top-level windows, and one of ours in front.
+function Guarded-Drag([int]$x1, [int]$y1, [long]$fromHwnd, [int]$x2, [int]$y2, [long]$toHwnd, [string]$what) {
+    $a = [Mp.Mouse]::RootAt($x1, $y1); $b = [Mp.Mouse]::RootAt($x2, $y2)
+    if ($a -ne $fromHwnd -or $b -ne $toHwnd) {
+        throw ("guard: " + $what + ": the windows under the pointer are not ours (start " + $a + " pid " + [Mp.Mouse]::PidOf($a) +
+            ", drop " + $b + " pid " + [Mp.Mouse]::PidOf($b) + ") - stopped before any input")
+    }
+    [void][Mp.Mouse]::SetForegroundWindow([IntPtr]$fromHwnd)
+    Start-Sleep -Milliseconds 300
+    $fg = [Mp.Mouse]::GetForegroundWindow().ToInt64()
+    if ($fg -ne $fromHwnd -and $fg -ne $toHwnd) { throw ("guard: " + $what + ": foreground is pid " + [Mp.Mouse]::PidOf($fg) + ", not ours - stopped before any input") }
+    [Mp.Mouse]::Drag($x1, $y1, $x2, $y2)
+}
+
+function Find-ExItem($root, [string[]]$Names) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition($AT::ControlTypeProperty, $CT::ListItem)
+    foreach ($e in $root.FindAll($TS::Descendants, $cond)) { if ($Names -contains $e.Current.Name) { return $e } }
+    $null
+}
+# A point on the item's name: past the icon, vertically centred.
+function Grip($r) { @([int]($r[0] + 28), [int](($r[1] + $r[3]) / 2)) }
+function ExRect($el) { $r = $el.Current.BoundingRectangle; @($r.X, $r.Y, $r.Right, $r.Bottom) }
 
 function Archive-Has([string]$arc, [string]$name) {
     $out = & $SevenZ l -ba $arc 2>$null
@@ -148,7 +205,6 @@ function Archive-Has([string]$arc, [string]$name) {
 }
 
 # ---------- fixtures ----------
-$root = Join-Path $env:TEMP ('MakePack-dragtest-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 $folder = Join-Path $root 'dragbox'
 $src = Join-Path $root 'src'
 New-Item -ItemType Directory -Force -Path $folder, (Join-Path $src 'dir\sub') | Out-Null
@@ -174,43 +230,45 @@ try {
     $script:explorer = [IntPtr]$hw
     $exEl = $AT::FromHandle($script:explorer)
     [void][Mp.Mouse]::ShowWindow($script:explorer, 9)
-    [void][Mp.Mouse]::MoveWindow($script:explorer, 1285, 0, 1270, 1000, $true)
-    $in1 = Wait-For { Find-Item $exEl @('in1.txt', 'in1') } 15
+    [void][Mp.Mouse]::MoveWindow($script:explorer, $exRect[0], $exRect[1], $exRect[2], $exRect[3], $true)
+    $in1 = Wait-For { Find-ExItem $exEl @('in1.txt', 'in1') } 15
     if (-not $in1) { throw "in1.txt not found in the Explorer window via UI Automation" }
     $viewCond = New-Object System.Windows.Automation.PropertyCondition($AT::ClassNameProperty, 'UIItemsView')
     $view = $exEl.FindFirst($TS::Descendants, $viewCond)
     if (-not $view) { throw "the Explorer items view was not found" }
     $vr = $view.Current.BoundingRectangle
     $exEmpty = @([int]($vr.X + $vr.Width * 0.6), [int]($vr.Bottom - 60))
+    $exH = $script:explorer.ToInt64()
 
     # ---------- IN: Explorer -> archive window ----------
-    $p = Start-Mp @('"' + $box + '"')
-    $mw = Main-Window $p '*box.7z*'
-    if (-not $mw) { throw "MakePack main window with box.7z did not appear" }
-    Place $mw 0
-    $lr = ($mw.FindFirst($TS::Descendants, (New-Object System.Windows.Automation.PropertyCondition($AT::ControlTypeProperty, $CT::List)))).Current.BoundingRectangle
-    $mpEmpty = @([int]($lr.X + $lr.Width / 2), [int]($lr.Y + $lr.Height * 0.7))
-    $g = Grip $in1
-    [Mp.Mouse]::Drag($g[0], $g[1], $mpEmpty[0], $mpEmpty[1])
+    $m = Measure-Mp @($box) @('inside.txt###r', 'dir###r')
+    if (-not $m['list']) { throw "the layout run found no file list" }
+    $p = Start-Mp @($box)
+    $mpH = $p.MainWindowHandle.ToInt64()
+    $l = $m['list']
+    $mpEmpty = @([int](($l[0] + $l[2]) / 2), [int]($l[1] + ($l[3] - $l[1]) * 0.8))
+    $g = Grip (ExRect $in1)
+    Guarded-Drag $g[0] $g[1] $exH $mpEmpty[0] $mpEmpty[1] $mpH 'in'
     $ok = Wait-For { Archive-Has $box 'in1.txt' } 15
     Shot 'in-archive'
-    if ($ok) { Pass "in: Explorer -> archive window (in1.txt is in box.7z)" } else { Fail ("in: in1.txt did not get into box.7z; windows: " + ((Uia-Windows $p.Id | ForEach-Object { $_.Current.Name }) -join ' | ')) }
+    if ($ok) { Pass "in: Explorer -> archive window (in1.txt is in box.7z)" } else { Fail "in: in1.txt did not get into box.7z (see drag-in-archive.png)" }
+    Close-App $p
 
-    # ---------- OUT: archive window -> Explorer ----------
-    $mw = Main-Window $p '*box.7z*'
-    $item = Wait-For { Find-Item $mw @('inside.txt') } 10
-    if (-not $item) { Fail "out: inside.txt not in the MakePack list" } else {
-        $g = Grip $item
-        [Mp.Mouse]::Drag($g[0], $g[1], $exEmpty[0], $exEmpty[1])
+    # ---------- OUT: archive window -> Explorer (the list was re-measured: in1.txt is a new row) ----------
+    $m = Measure-Mp @($box) @('inside.txt###r', 'dir###r')
+    $p = Start-Mp @($box)
+    $mpH = $p.MainWindowHandle.ToInt64()
+    if (-not $m['inside.txt###r']) { Fail "out: inside.txt not in the MakePack list" } else {
+        $g = Grip $m['inside.txt###r']
+        Guarded-Drag $g[0] $g[1] $mpH $exEmpty[0] $exEmpty[1] $exH 'out file'
         $target = Join-Path $folder 'inside.txt'
         $ok = Wait-For { (Test-Path -LiteralPath $target) -and ((Get-Content -LiteralPath $target -Raw).Trim() -eq 'inside content') } 10
         Shot 'out-file'
-        if ($ok) { Pass "out: file dragged to Explorer (inside.txt, right content)" } else { Fail ("out: inside.txt did not appear in the folder; folder has [" + ((Get-ChildItem -LiteralPath $folder | ForEach-Object { $_.Name }) -join ',') + "]; windows: " + ((Uia-Windows $p.Id | ForEach-Object { $_.Current.Name }) -join ' | ')) }
+        if ($ok) { Pass "out: file dragged to Explorer (inside.txt, right content)" } else { Fail ("out: inside.txt did not appear in the folder; folder has [" + ((Get-ChildItem -LiteralPath $folder | ForEach-Object { $_.Name }) -join ',') + "]") }
     }
-    $item = Wait-For { Find-Item $mw @('dir') } 10
-    if (-not $item) { Fail "out: folder 'dir' not in the MakePack list" } else {
-        $g = Grip $item
-        [Mp.Mouse]::Drag($g[0], $g[1], $exEmpty[0], $exEmpty[1])
+    if (-not $m['dir###r']) { Fail "out: folder 'dir' not in the MakePack list" } else {
+        $g = Grip $m['dir###r']
+        Guarded-Drag $g[0] $g[1] $mpH $exEmpty[0] $exEmpty[1] $exH 'out folder'
         $ok = Wait-For {
             ((Get-Content -LiteralPath (Join-Path $folder 'dir\child.txt') -Raw).Trim() -eq 'child content') -and
             ((Get-Content -LiteralPath (Join-Path $folder 'dir\sub\deep.txt') -Raw).Trim() -eq 'deep content')
@@ -220,30 +278,32 @@ try {
     }
     Close-App $p
 
-    # ---------- IN: Explorer -> empty window = new archive dialog ----------
+    # ---------- IN: Explorer -> empty window = new archive dialog (checked on the screenshot) ----------
+    [IO.File]::WriteAllText($cfg, (Settings-Json))
     $p = Start-Mp @()
-    $mw = Main-Window $p 'MakePack'
-    if (-not $mw) { throw "empty MakePack window did not appear" }
-    Place $mw 0
-    $in2 = Find-Item $exEl @('in2.txt', 'in2')
-    $g = Grip $in2
-    [Mp.Mouse]::Drag($g[0], $g[1], 640, 500)
-    $dlg = Wait-For { foreach ($w in (Uia-Windows $p.Id)) { if ($w.Current.Name -match '^(New archive|' + [regex]::Escape((@([char]0x041D, [char]0x043E, [char]0x0432, [char]0x0438, [char]0x0439) -join '')) + ')') { return $w } } } 10
-    if (-not $dlg) { $dlg = Wait-For { foreach ($w in (Uia-Windows $p.Id)) { foreach ($k in $w.FindAll($TS::Children, [System.Windows.Automation.Condition]::TrueCondition)) { if ($k.Current.ControlType -eq $CT::Window) { return $k } } } } 3 }
+    $mpH = $p.MainWindowHandle.ToInt64()
+    $in2 = Find-ExItem $exEl @('in2.txt', 'in2')
+    $g = Grip (ExRect $in2)
+    $c = @([int]($mpRect[0] + $mpRect[2] / 2), [int]($mpRect[1] + $mpRect[3] * 0.6))
+    Guarded-Drag $g[0] $g[1] $exH $c[0] $c[1] $mpH 'in empty'
+    Start-Sleep -Seconds 2
     Shot 'in-empty'
-    if ($dlg) { Pass ("in: Explorer -> empty window opened '" + $dlg.Current.Name + "'") } else { Fail ("in: no new-archive dialog; windows: " + ((Uia-Windows $p.Id | ForEach-Object { $_.Current.Name }) -join ' | ')) }
-    Close-App $p
+    Log "CHECK by eye: drag-in-empty.png must show the New archive dialog with in2.txt (ImGui windows are not visible to UIA)"
+    $p.Refresh()
+    try { Stop-Process -Id $p.Id -Force } catch { }   # the dialog vetoes WM_CLOSE
     $p = $null
 } catch {
     Fail ("setup: " + $_.Exception.Message + " [line " + $_.InvocationInfo.ScriptLineNumber + "]")
     Shot 'error'
 } finally {
-    if ($p) { Close-App $p } else { Kill-App }
+    if ($p) { Close-App $p }
+    foreach ($x in $script:procs) { try { if (-not $x.HasExited) { $x.Kill() } } catch { } }
     if ($script:explorer -ne [IntPtr]::Zero -and [Mp.Mouse]::IsWindow($script:explorer)) {
         [void][Mp.Mouse]::PostMessage($script:explorer, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)   # WM_CLOSE, our window only
     }
     Start-Sleep -Milliseconds 500
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath "HKCU:\$reg" -Recurse -Force -ErrorAction SilentlyContinue
 }
 Write-Host ""
 if ($script:fails -eq 0) { Write-Host "DRAGTEST: ALL OK"; exit 0 }

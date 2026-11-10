@@ -32,7 +32,7 @@ ReleaseSafe sizes (2026-11-10): MakePack.exe 3,256,320 bytes, MakePackShell.dll 
 | MP-C | src/platform/assoc.zig, single.zig, cli.zig, platform_win.zig, platform_dispatch.zig, src/test_platform.zig | Assoc.cs, Cli.cs, Program.Main/Send/Serve/Absolute/RegistryVerb/UseConsole | test-platform: 52 pass (e2e CLI included) | done |
 | MP-D | shell/shell.zig, tools/build_shell.ps1, shell/package/*, shell/test/* | legacy/shell/MakePackShell.cpp | test-shell: 5 unit tests + harness ALL OK | done (not run in a real Explorer) |
 | integration | cross-package fixes, selftest registry/single checks, build.zig shell steps | all | `zig build test` 71 + 5 pass; black-box CLI; single instance | done |
-| GUI | later phase (src/gui/...) | forms, Shell.cs, Program.Dispatch | MakeKit imgui-auto | placeholder window |
+| GUI | see "GUI" below (src/ui/...) | forms, Shell.cs, Program.Dispatch | MakeKit imgui-auto | contract + stubs (MP-G1, MP-G2 next) |
 
 `src/core/types.zig` and `src/testutil.zig` are shared: a public signature change = a line in "Contract changes".
 
@@ -106,8 +106,47 @@ redirects HKCU (RegOverridePredefKey) to a throw-away `MakePackTest-<random>` ke
 
 ### main.zig (dispatch order = Program.Main)
 `--selftest` -> settings.init -> `--register/--unregister/--addmenu` (cli.registryVerb) -> `--assoc/--settings`
-(GUI phase: exit 0) -> `cli.run` -> single instance (acquire; client: send absolute args, else standalone;
-server: serve + assoc.heal on the real HKCU, skipped when MAKEPACK_INSTANCE is set = a test run) -> GUI placeholder.
+(`gui(.assoc/.settings)`: the dialog alone, no pipe, ctx.standalone) -> `cli.run` (ask_password =
+`Dialogs.cliAskPassword`) -> single instance (acquire; client: send absolute args, else standalone; server: serve +
+assoc.heal on the real HKCU, skipped when MAKEPACK_INSTANCE is set = a test run) -> own args into the Inbox -> GUI.
+
+## GUI (contract set 2026-11-10; MP-G1 and MP-G2 work in parallel)
+
+| Id | Owned files | Spec |
+|---|---|---|
+| GUI contract (main.zig) | src/main.zig (Inbox, Ui, frame loop, OpenMain, close, drop routing), src/ui/ctx.zig | Program.Main/Post/OpenMain/MaybeExit |
+| MP-G1 main window | src/ui/main_window.zig + src/ui/mw_*.zig | MainForm.cs, Shell.cs, research notes, docs/ICONS-NEEDED.md, research notes |
+| MP-G2 dialogs + dispatch | src/ui/dialogs.zig + src/ui/dlg_*.zig | Program.Dispatch/Enqueue/Pump/Extract/Add/Gather/RunProfile/Fail, every *Form.cs but MainForm, research notes |
+
+A change to ctx.zig or to a public signature in dialogs.zig / main_window.zig = a line in "Contract changes".
+The full contract is the module doc + doc comments of those three files; the essentials:
+
+- **One OS window** (kit.app). `ctx.has_main_window` true: the main window fills it, dialogs are ImGui windows/popups
+  on top. False: the dialogs own the OS window (size, title, visibility): the progress-only mode of Explorer's
+  "Extract here/to" (the queue's ONE "n of N" progress), the compress dialog of `a`, convert, `--assoc/--settings`.
+- **Frame order** (main.zig): Inbox (own + pipe-forwarded argument lists) -> `Dialogs.dispatch` each ->
+  requests: `.open_main` to main.zig (create `MainWindow` in place or `open(path)`, then `ctx.raise()`), the rest to
+  `MainWindow.handle` (dropped when there is none) -> `MainWindow.draw` (false = closed) -> `Dialogs.draw` ->
+  MaybeExit: no main window and `Dialogs.idle()` -> `app.quit()`.
+- **Requests** (`ctx.post`, UI thread, own their strings, handled next frame before anything draws): open_main,
+  open_path, locate, refresh, release_archive, detach_archive, replace_archive, reopen, opened, ready, temp_ready,
+  confirmed, text, status, settings_changed. Async answers carry a G1-chosen `Token`; cancel posts nothing.
+- **Archive ownership**: the main window owns its open `*engine.Archive`; dialog entry points borrow it while
+  `Dialogs.modal()` is true (the main window then takes no input, defers `open`, never closes/replaces it). Edits
+  (delete/rename/add) take it over with `.detach_archive` and always end with `.reopen`; EnsurePassword's new
+  instance arrives as `.replace_archive`; convert of the open archive / AfterExtract ask for `.release_archive`.
+- **Close button**: never under a modal; with a main window it closes the main window and the process ends only if
+  the dialogs are idle (else the OS window stays for them); without one, `Dialogs.closeRequested()` decides.
+- **Drops**: `Dialogs.filesDropped` first (the compress dialog), else `MainWindow.filesDropped`.
+- **Exit code**: `ctx.exit_code` (Program._exit), written by the dialogs.
+- **Tests**: `MAKEPACK_INSTANCE`, `MAKEPACK_SETTINGS`, `MAKEPACK_REGROOT` (an HKCU subkey such as
+  `Software\MakePackTest-<random>` that stands in for HKCU in every Assoc read/write: the `--register/--unregister/
+  --addmenu` verbs via `cli.Env.hive`, the GUI via `ctx.hive`, Heal; main.zig `testHive`, older name
+  `MAKEPACK_HIVE`), `MAKEKIT_AUTOMATION=1`, `MAKEKIT_DISPLAY=\\.\DISPLAY1`; click by `##id`; `ctx.raise()` does
+  nothing under automation.
+- main.zig's `comptime` block type-checks every stubbed entry point; delete it when G1/G2 call them all.
+- Boot check (2026-11-10, automation): no args -> main window with `###mfile`..`###mhelp`; a second process forwards
+  and exits 0, one process; `quit` exit 0; `x`, `--assoc`, `--settings` exit at once with the stub dialogs.
 
 ## Rules
 - Core (`src/core/**`, `src/platform/**`) never imports kit.im / kit.ui / kit.app; prompts are callbacks.
@@ -126,11 +165,19 @@ server: serve + assoc.heal on the real HKCU, skipped when MAKEPACK_INSTANCE is s
   backup sits next to the archive; C#: `a -y x.7z .` worked because the old archive was already deleted).
 - selftest prints `gui: deferred` instead of `SKIP gui`; new checks `registry` and `single`.
 - build.zig: `test` also runs shell.zig's tests; `test-shell` = shell unit tests + harness; new step `shell`.
+- main.zig (MP-T): `MAKEPACK_REGROOT` (alias `MAKEPACK_HIVE`) is read once in `main` (`testHive`) and passed to
+  `cli.Env.hive` and `gui(..., hive)` -> `ctx.hive`; with it set the server process heals that root (not the real
+  HKCU). dlg_assoc skips `assoc.notify()` under a test root.
+- Tooling (MP-T): `tools/bugtest.ps1` drives the Zig app over MakeKit automation (old UIA cases ported, same
+  assertions; registry cases under MAKEPACK_REGROOT); `guismoke.ps1` / `settingstest.ps1` use automation;
+  `dragtest.ps1` is manual-only (real SendInput); `build.ps1` = zig build ReleaseSafe -> `dist\app` -> build_shell
+  -> ISCC (`-NoSign` passes through); `publish.ps1`, `bom.ps1`, `invoke_btn.ps1` (.NET/UIA only) removed.
 
 ## Open items
-- **GUI phase**: MainForm and all forms, Program.Dispatch (x queue, a dialog, --quick/--profile with progress and
-  ConfirmOverwrite, convert, open archive), PasswordForm (main passes a callback that cancels: `-p` = cancelled),
-  `--assoc` / `--settings` (exit 0 now), the selftest `gui` check, tools/bugtest.ps1 (GUI + real HKCU: not run).
+- **GUI phase**: MP-G1 / MP-G2 delivered (see their reports); `tools/bugtest.ps1` runs all cases on the Zig app.
+  Not automated: drag-and-drop (`tools/dragtest.ps1`, manual), OS file dialogs, input box values (the tests read
+  them back through files / saved profiles instead).
+- Tests killed mid-run leave engine temp folders in `%TEMP%\MakePack\<hash>` (the app removes them on a normal exit).
 - Error text: `engine.friendly` falls back to the Zig error name (AccessDenied, FileBusy, NoSpaceLeft, ...) where C#
   showed the localized Windows message. Map via FormatMessageW or a table of S strings.
 - Long paths: engine file helpers rely on the manifest's longPathAware (needs HKLM LongPathsEnabled=1, off on stock
@@ -151,6 +198,6 @@ server: serve + assoc.heal on the real HKCU, skipped when MAKEPACK_INSTANCE is s
   C# had the same).
 - Shell: not run in a real Explorer (sparse package install forbidden in tests); no panic containment inside the
   host; `dir()` ignores a GetModuleHandleExW failure; 64 KB arena per launch (grows with huge selections).
-- Docs: README.md lines 33/59 still describe the shell build as CMake + MSVC; legacy/shell/CMakeLists.txt not rebuilt.
+- Docs: legacy/shell/CMakeLists.txt not rebuilt (README's build section describes the Zig build since MP-T).
 - MakeKit: `third_party/imgui/VERSION` shadows libc++'s `<version>`; build.zig works around it with
   `-idirafter` until MakeKit renames the file.

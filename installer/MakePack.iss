@@ -1,6 +1,6 @@
 ﻿; MakePack - Windows archiver over 7-Zip's 7z.dll.
 ; ponytail: no license page, no custom wizard pages, no VersionInfo block - Inno defaults are enough.
-; ponytail: the app owns every registry key (src\MakePack\Assoc.cs) and the installer just calls it -
+; ponytail: the app owns every registry key (src\platform\assoc.zig) and the installer just calls it -
 ;           one implementation for setup, uninstall and the in-app "Associations..." dialog.
 
 #ifndef MyAppVersion
@@ -41,7 +41,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "win11menu"; Description: "{cm:TaskWin11Menu}"; Check: IsWin11
 
 [Files]
-Source: "..\dist\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; MakePack.exe, 7z.dll, 7z.sfx (tools\build.ps1 stages them from zig-out\bin; one exe, no runtime folder).
+Source: "..\dist\app\*"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\third_party\7zip\License.txt"; DestDir: "{app}"; DestName: "7-Zip-License.txt"; Flags: ignoreversion
 ; Windows 11 top-level menu (shell\, tools\build_shell.ps1). Installed on every OS, registered only by the win11menu task.

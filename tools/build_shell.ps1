@@ -1,7 +1,7 @@
 # Win11 top-level context menu: zig build (DLL + test harness) -> harness -> makeappx -> signtool.
 # Output: dist\shell\MakePackShell.dll + dist\shell\MakePackShell.msix. Needs tools\new_cert.ps1 run once.
 # -NoSign stops after makeappx (unsigned msix; a machine without the certificate, or a dry run).
-# ponytail: does not touch dist\publish; build.ps1 calls it between publish and ISCC.
+# ponytail: does not touch dist\app; build.ps1 calls it between zig build and ISCC.
 param([string]$Version = "1.0.0", [switch]$NoSign)
 
 $ErrorActionPreference = 'Stop'
