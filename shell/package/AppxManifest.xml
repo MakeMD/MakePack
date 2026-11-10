@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Sparse ("external location") package: carries only identity + the Explorer command registration.
      Every path below (Executable, com:Class Path, logos) resolves inside the install folder passed to
-     Add-AppxPackage -ExternalLocation. Version is rewritten by tools\build_shell.ps1; CLSID is in shell\clsid.h. -->
+     Add-AppxPackage -ExternalLocation. Version is rewritten by tools\build_shell.ps1; CLSID is clsid_command in shell\shell.zig. -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"

@@ -1,5 +1,8 @@
 // Drives MakePackShell.dll the way Explorer does, without installing anything. Not shipped.
 // Usage: harness.exe <MakePackShell.dll> <fake_makepack.exe>      exit code = number of failed checks
+// Isolation: HKCU is redirected (RegOverridePredefKey) to a throw-away HKCU\Software\MakePackTest-<random> for this
+// whole process - the in-process DLL reads HKCU\Software\MakePack through it - and every file lives in a fresh
+// %TEMP%\makepack-test-<random>. Both are removed on exit; the user's real MakePack keys are never read or written.
 #include <windows.h>
 #include <shlobj.h>
 #include <wrl/client.h>
@@ -11,11 +14,43 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "../clsid.h"
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 static int g_fails;
+
+// The MakePack command CLSID {21DB9173-64FA-4183-A08E-E073FEBB7B8D} (shell/shell.zig, shell/package/AppxManifest.xml).
+static const CLSID kClsid = { 0x21DB9173, 0x64FA, 0x4183, { 0xA0, 0x8E, 0xE0, 0x73, 0xFE, 0xBB, 0x7B, 0x8D } };
+
+struct Sandbox
+{
+    std::wstring id = L"shell-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
+    std::wstring key = L"Software\\MakePackTest-" + id;
+    fs::path dir = fs::temp_directory_path() / (L"makepack-test-" + id);
+    HKEY hkcu = nullptr;
+    std::vector<HMODULE> modules;   // DLLs loaded by Load(), freed before the folder is removed
+    bool ok = false;
+
+    Sandbox()
+    {
+        ok = RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hkcu, nullptr) == ERROR_SUCCESS
+             && RegOverridePredefKey(HKEY_CURRENT_USER, hkcu) == ERROR_SUCCESS;
+    }
+    ~Sandbox()
+    {
+        RegOverridePredefKey(HKEY_CURRENT_USER, nullptr);
+        if (hkcu) RegCloseKey(hkcu);
+        RegDeleteTreeW(HKEY_CURRENT_USER, key.c_str());
+        for (HMODULE m : modules) FreeLibrary(m);
+        std::error_code ec;
+        for (int i = 0; i < 50 && fs::exists(dir, ec); i++)   // the fakes may still be exiting
+        {
+            fs::remove_all(dir, ec);
+            if (ec) Sleep(100);
+        }
+    }
+};
+static Sandbox* g_box;
 
 static void Out(const std::wstring& s)
 {
@@ -33,10 +68,11 @@ static void Check(bool ok, const std::wstring& what)
 static ComPtr<IExplorerCommand> Load(const fs::path& dll)
 {
     HMODULE m = LoadLibraryW(dll.c_str());
+    if (m) g_box->modules.push_back(m);
     auto get = m ? reinterpret_cast<decltype(&DllGetClassObject)>(GetProcAddress(m, "DllGetClassObject")) : nullptr;
     ComPtr<IClassFactory> factory;
     ComPtr<IExplorerCommand> root;
-    if (!get || FAILED(get(__uuidof(MakePackCommand), IID_PPV_ARGS(&factory)))
+    if (!get || FAILED(get(kClsid, IID_PPV_ARGS(&factory)))
         || FAILED(factory->CreateInstance(nullptr, IID_PPV_ARGS(&root))))
         Out(L"FAIL cannot load " + dll.wstring());
     return root;
@@ -153,11 +189,13 @@ static size_t Count(const std::vector<std::wstring>& lines, const std::wstring& 
 int wmain(int argc, wchar_t** argv)
 {
     if (argc < 3) { Out(L"usage: harness.exe <MakePackShell.dll> <fake_makepack.exe>"); return 1; }
+    Sandbox box;   // first: destroyed last, after every ComPtr below
+    g_box = &box;
+    if (!box.ok) { Out(L"FAIL cannot redirect HKCU to HKCU\\" + box.key); return 1; }
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     fs::path dll = fs::absolute(argv[1]), fake = fs::absolute(argv[2]);
 
-    fs::path root = fs::temp_directory_path() / L"makepack_shell_test";
-    fs::remove_all(root);
+    fs::path root = box.dir;
     fs::create_directories(root / L"folder");
     fs::create_directories(root / L"app");
     auto touch = [&](const wchar_t* n) { std::ofstream(root / n) << "x"; return root / n; };
@@ -181,7 +219,7 @@ int wmain(int argc, wchar_t** argv)
     auto quick = [&](const std::vector<fs::path>& sel) { return TitleOf(Subs(cmd.Get())[4].Get(), Items(sel).Get()); };
     Check(quick({ dir }).find(L"folder.7z") != std::wstring::npos, L"quick title for a folder: " + quick({ dir }));
     Check(quick({ uk }).find(L"Звіт за травень 2026.tar.7z") != std::wstring::npos, L"quick title for a file: " + quick({ uk }));
-    Check(quick({ zip, txt }).find(L"makepack_shell_test.7z") != std::wstring::npos, L"quick title for several: " + quick({ zip, txt }));
+    Check(quick({ zip, txt }).find(root.filename().wstring() + L".7z") != std::wstring::npos, L"quick title for several: " + quick({ zip, txt }));
 
     // The user's switches (HKCU\Software\MakePack MenuItems) hide items. The value is put back exactly as it was.
     {
@@ -201,7 +239,7 @@ int wmain(int argc, wchar_t** argv)
     fs::copy_file(fake, root / L"app" / L"MakePack.exe");
     auto app = Load(root / L"app" / L"MakePackShell.dll");
     if (!app) return 1;
-    fs::path log = fs::temp_directory_path() / L"makepack_shell_log.txt";
+    fs::path log = root / L"app" / L"makepack_shell_log.txt";   // fake_makepack.cpp writes it next to itself
     fs::remove(log);
 
     InvokeVisible(app.Get(), { zip, tgz, uk });   // Here x3, To x3, Add x1, Quick x1
@@ -235,7 +273,7 @@ int wmain(int argc, wchar_t** argv)
     Check(total == 600, L"every one of the 300 paths passed exactly once per verb (Add, Quick)");
 
     // ---- 3. profiles marked "in menu" (HKCU\Software\MakePack\MenuProfiles, written by Assoc.ApplyProfiles) ----
-    // Put there for this check only and removed again; skipped when the user already has some, so nothing of theirs is lost.
+    // Put there for this check only and removed again (HKCU is the sandbox key, so the skip below never fires).
     HKEY probe = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\MakePack\\MenuProfiles", 0, KEY_READ, &probe) == ERROR_SUCCESS)
     {
@@ -271,6 +309,12 @@ int wmain(int argc, wchar_t** argv)
 
     cmd.Reset();
     app.Reset();
+    // Explorer (the COM surrogate) unloads the DLL only when it says so: every object released -> S_OK.
+    for (HMODULE m : box.modules)
+    {
+        auto can = reinterpret_cast<HRESULT(WINAPI*)()>(reinterpret_cast<void*>(GetProcAddress(m, "DllCanUnloadNow")));
+        Check(can && can() == S_OK, L"DllCanUnloadNow = S_OK after the last Release");
+    }
     Out(g_fails ? std::to_wstring(g_fails) + L" FAILED" : L"ALL OK");
     return g_fails;
 }

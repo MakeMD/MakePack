@@ -9,6 +9,6 @@ add_compile_definitions(UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
 add_library(MakePackShell SHARED MakePackShell.cpp)
 target_link_libraries(MakePackShell PRIVATE shlwapi)
 
-# Test only, never shipped: tools\build_shell.ps1 runs harness.exe against the fresh DLL.
-add_executable(fake_makepack test/fake_makepack.cpp)
-add_executable(harness test/harness.cpp)
+# Legacy MSVC reference build only; the shipped DLL is shell/shell.zig (zig build test-shell runs the same harness).
+add_executable(fake_makepack ../../shell/test/fake_makepack.cpp)
+add_executable(harness ../../shell/test/harness.cpp)

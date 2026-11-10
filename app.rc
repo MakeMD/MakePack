@@ -1,0 +1,3 @@
+// MakePack.exe resources: icon 1 (kit.app.Config.icon_id = 1) + the MakeKit manifest (found via the kit's res/ include path).
+1 ICON "icon/makepack.ico"
+1 24 "app.manifest"

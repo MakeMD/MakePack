@@ -9,3 +9,4 @@ shell/cert/*.pfx
 __pycache__/
 .zig-cache/
 zig-out/
+zig-pkg/

@@ -1,13 +1,16 @@
-# Win11 top-level context menu: cmake (DLL + test harness) -> harness -> makeappx -> signtool.
+# Win11 top-level context menu: zig build (DLL + test harness) -> harness -> makeappx -> signtool.
 # Output: dist\shell\MakePackShell.dll + dist\shell\MakePackShell.msix. Needs tools\new_cert.ps1 run once.
+# -NoSign stops after makeappx (unsigned msix; a machine without the certificate, or a dry run).
 # ponytail: does not touch dist\publish; build.ps1 calls it between publish and ISCC.
-param([string]$Version = "1.0.0")
+param([string]$Version = "1.0.0", [switch]$NoSign)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $shell = Join-Path $root 'shell'
 $build = Join-Path $shell 'build'
 $out = Join-Path $root 'dist\shell'
+$zig = Join-Path $env:LOCALAPPDATA 'Programs\zig\0.17.1\zig.exe'
+if (-not (Test-Path $zig)) { throw "Zig 0.17.1 not found at $zig" }
 $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\makeappx.exe" |
     Sort-Object FullName | Select-Object -Last 1 | Split-Path
 if (-not $kit) { throw "Windows SDK (makeappx.exe) not found" }
@@ -24,16 +27,15 @@ if (-not (Test-Path (Join-Path $assets 'StoreLogo.png'))) {
     if ($LASTEXITCODE) { throw "logo render failed (exit $LASTEXITCODE)" }
 }
 
-# 1. DLL + harness.
-cmake -S $shell -B $build -A x64 | Out-Null
-if ($LASTEXITCODE) { throw "cmake configure failed (exit $LASTEXITCODE)" }
-cmake --build $build --config Release
-if ($LASTEXITCODE) { throw "cmake build failed (exit $LASTEXITCODE)" }
-$dll = Join-Path $build 'Release\MakePackShell.dll'
-
-# 2. Drive the DLL like Explorer would (menu states + command lines against a fake MakePack.exe).
-& (Join-Path $build 'Release\harness.exe') $dll (Join-Path $build 'Release\fake_makepack.exe')
-if ($LASTEXITCODE) { throw "shell harness: $LASTEXITCODE check(s) failed" }
+# 1+2. DLL + harness: test-shell builds MakePackShell.dll, harness.exe and fake_makepack.exe and drives the DLL like
+# Explorer would (menu states + command lines against the fake MakePack.exe, in a throw-away HKCU key and temp
+# folder); `shell` installs the same DLL into zig-out\bin without building MakePack.exe.
+Push-Location $root
+try {
+    & $zig build test-shell shell -Doptimize=ReleaseSafe
+    if ($LASTEXITCODE) { throw "zig build test-shell failed (exit $LASTEXITCODE): build error or failed harness check(s)" }
+} finally { Pop-Location }
+$dll = Join-Path $root 'zig-out\bin\MakePackShell.dll'
 Copy-Item $dll $out -Force
 
 # 3. Pack: manifest + logos only (/nv: the exe and DLL live in the external location, not in the package).
@@ -47,6 +49,7 @@ $xml = (Get-Content $manifest -Raw) -replace '(<Identity [^>]*Version=")[^"]*"',
 $msix = Join-Path $out 'MakePackShell.msix'
 & "$kit\makeappx.exe" pack /o /d $stage /p $msix /nv
 if ($LASTEXITCODE) { throw "makeappx failed (exit $LASTEXITCODE)" }
+if ($NoSign) { Write-Host "OK  $msix (NOT signed)" -ForegroundColor Yellow; return }
 
 # 4. Sign. The password is read from .env here - never a script argument, never printed.
 # ponytail: signtool only takes it via /p, so it is visible in signtool's own process command line while it runs.

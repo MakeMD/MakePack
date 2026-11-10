@@ -1,0 +1,18 @@
+.{
+    .name = .makepack,
+    .version = "2.0.0",
+    .fingerprint = 0x8676abc9857cdb19,
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .makekit = .{ .path = "../MakeKit" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "app.rc",
+        "src",
+        "shell",
+        "icon",
+        "third_party",
+    },
+}
