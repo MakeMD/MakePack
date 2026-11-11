@@ -224,6 +224,37 @@ pub fn eqlIgnoreCase(a: []const u8, b: []const u8) bool {
     return CompareStringOrdinal(wa.ptr, @intCast(wa.len), wb.ptr, @intCast(wb.len), .TRUE) == 2; // CSTR_EQUAL
 }
 
+/// '*' and '?' (one UTF-16 unit), every unit compared OrdinalIgnoreCase ("Їжак" matches "їж*").
+pub fn globIgnoreCase(name: []const u16, mask: []const u16) bool {
+    var n: usize = 0;
+    var m: usize = 0;
+    var star: ?usize = null;
+    var mark: usize = 0;
+    while (n < name.len) {
+        if (m < mask.len and mask[m] == '*') {
+            star = m;
+            m += 1;
+            mark = n;
+        } else if (m < mask.len and (mask[m] == '?' or sameChar(mask[m], name[n]))) {
+            n += 1;
+            m += 1;
+        } else if (star) |s| {
+            m = s + 1;
+            mark += 1;
+            n = mark;
+        } else return false;
+    }
+    while (m < mask.len and mask[m] == '*') m += 1;
+    return m == mask.len;
+}
+
+fn sameChar(x: u16, y: u16) bool {
+    if (x == y) return true;
+    var a = x;
+    var b = y;
+    return CompareStringOrdinal(@ptrCast(&a), 1, @ptrCast(&b), 1, .TRUE) == 2; // CSTR_EQUAL, ignoring case
+}
+
 // ---- tests ------------------------------------------------------------------------------------------
 
 const testing = std.testing;

@@ -366,37 +366,7 @@ fn expand(io: Io, a: Allocator, arg: []const u8, list: *std.ArrayList([]const u8
 fn matches(a: Allocator, name: []const u8, mask: []const u8) !bool {
     const n = try kit.win.toW(a, name);
     const m = try kit.win.toW(a, if (eql(u8, mask, "*.*")) "*" else mask);
-    return glob(n, m);
-}
-
-fn glob(name: []const u16, mask: []const u16) bool {
-    var n: usize = 0;
-    var m: usize = 0;
-    var star: ?usize = null;
-    var mark: usize = 0;
-    while (n < name.len) {
-        if (m < mask.len and mask[m] == '*') {
-            star = m;
-            m += 1;
-            mark = n;
-        } else if (m < mask.len and (mask[m] == '?' or sameChar(mask[m], name[n]))) {
-            n += 1;
-            m += 1;
-        } else if (star) |s| {
-            m = s + 1;
-            mark += 1;
-            n = mark;
-        } else return false;
-    }
-    while (m < mask.len and mask[m] == '*') m += 1;
-    return m == mask.len;
-}
-
-fn sameChar(x: u16, y: u16) bool {
-    if (x == y) return true;
-    var a = x;
-    var b = y;
-    return w.CompareStringOrdinal(&a, 1, &b, 1, 1) == 2; // CSTR_EQUAL, ignoring case
+    return types.globIgnoreCase(n, m);
 }
 
 // ---- passwords and opening -----------------------------------------------------------------------------
@@ -519,6 +489,7 @@ test "contract compiles" {
 }
 
 test "glob: *, ?, case, *.*" {
+    const glob = types.globIgnoreCase;
     const L = kit.win.L;
     try std.testing.expect(glob(L("a.TXT"), L("*.txt")));
     try std.testing.expect(!glob(L("a.txt~"), L("*.txt")));

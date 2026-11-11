@@ -888,28 +888,14 @@ pub fn matches(name: []const u8, masks: []const u8) bool {
     return !any;
 }
 
-// ponytail: ASCII case folding over UTF-8 bytes ('?' = one byte); Cyrillic names match exactly-cased masks only.
+/// types.globIgnoreCase over UTF-8 names (Cyrillic folds too; '?' = one UTF-16 unit).
 fn glob(name: []const u8, mask: []const u8) bool {
-    var n: usize = 0;
-    var m: usize = 0;
-    var star: ?usize = null;
-    var mark: usize = 0;
-    while (n < name.len) {
-        if (m < mask.len and mask[m] == '*') {
-            star = m;
-            m += 1;
-            mark = n;
-        } else if (m < mask.len and (mask[m] == '?' or std.ascii.toLower(mask[m]) == std.ascii.toLower(name[n]))) {
-            m += 1;
-            n += 1;
-        } else if (star) |s| {
-            m = s + 1;
-            mark += 1;
-            n = mark;
-        } else return false;
-    }
-    while (m < mask.len and mask[m] == '*') m += 1;
-    return m == mask.len;
+    const gpa = std.heap.smp_allocator;
+    const n = kit.win.toW(gpa, name) catch return false;
+    defer gpa.free(n);
+    const m = kit.win.toW(gpa, mask) catch return false;
+    defer gpa.free(m);
+    return types.globIgnoreCase(n, m);
 }
 
 test "masks, parentOf, lastSegment" {
@@ -917,6 +903,7 @@ test "masks, parentOf, lastSegment" {
     try t.expect(matches("a.cs", "*.cs") and !matches("a.csv", "*.cs") and matches("A.CS", "*.cs"));
     try t.expect(matches("x.md", "*.txt;*.md") and matches("x", "*.*") and matches("x", "") and matches("readme", "*."));
     try t.expect(!matches("a.txt", "*.") and matches("ab", "a?") and !matches("abc", "a?"));
+    try t.expect(matches("Звіт.TXT", "звіт*.txt") and matches("їжак", "?жак") and !matches("звіт", "звіти"));
     try t.expectEqualStrings("a/", parentOf("a/b/"));
     try t.expectEqualStrings("", parentOf("a/"));
     try t.expectEqualStrings("b", lastSegment("a/b/"));
