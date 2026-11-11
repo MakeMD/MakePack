@@ -177,35 +177,14 @@ threadlocal var friendly_buf: [1536]u8 = undefined;
 /// The Win32 code behind the last error.Unexpected that winErr made on this thread.
 threadlocal var last_win_error: u32 = 0;
 
-/// std's file errors -> the Win32 code whose system message says the same.
+/// std's file errors -> the Win32 code whose system message says the same (kit.win's table), plus the code behind
+/// an error.Unexpected that winErr made.
 fn winCode(err: anyerror) ?u32 {
-    return switch (err) {
-        error.FileNotFound => 2,
-        error.AccessDenied, error.PermissionDenied => 5,
-        error.FileBusy => 32,
-        error.PathAlreadyExists => 183,
-        error.NoSpaceLeft => 112,
-        error.DiskQuota => 1295,
-        error.NameTooLong => 206,
-        error.BadPathName => 123,
-        error.NotDir => 267,
-        error.DirNotEmpty => 145,
-        error.OutOfMemory, error.SystemResources => 8,
-        error.InputOutput => 1117,
-        error.NetworkNotFound => 53,
-        error.Unexpected => if (last_win_error != 0) last_win_error else null,
-        else => null,
-    };
+    if (err == error.Unexpected) return if (last_win_error != 0) last_win_error else null;
+    return kit.win.errorCode(err);
 }
 
-/// Windows' text for a Win32 code or HRESULT, in the user's UI language, trimmed; null when it has none.
-fn sysMessage(buf: []u8, code: u32) ?[]const u8 {
-    var wbuf: [512]u16 = undefined;
-    const flags: w.DWORD = w.FORMAT_MESSAGE_FROM_SYSTEM | w.FORMAT_MESSAGE_IGNORE_INSERTS;
-    const n = w.FormatMessageW(flags, null, code, 0, &wbuf, wbuf.len, null);
-    if (n == 0 or buf.len < 3 * n) return null;
-    return std.mem.trim(u8, buf[0..std.unicode.wtf16LeToWtf8(buf, wbuf[0..n])], " \r\n.");
-}
+const sysMessage = kit.win.sysMessage;
 
 /// "operation failed: <Windows' text for the last 7z.dll HRESULT>" into the Diag.
 fn failText(diag: ?*Diag) void {
@@ -1223,11 +1202,36 @@ fn escapes(dest_full: []const u8, raw: []const u8) bool {
         // "..", ".. ", "..." - but "." is fine
         if (std.mem.trim(u8, seg, " .").len == 0 and std.mem.count(u8, seg, ".") > 1) return true;
     }
-    const joined = combine(scratch, dest_full, raw) catch return true;
+    const safe = deviceSafe(scratch, raw) catch return true; // "nul" is a name to extract, not an escape
+    defer scratch.free(safe);
+    const joined = combine(scratch, dest_full, safe) catch return true;
     defer scratch.free(joined);
     const full = fullPath(scratch, joined) catch return true; // invalid characters, path too long, ...
     defer scratch.free(full);
     return !startsWithI(full, dest_full);
+}
+
+/// A segment Windows reads as a device: CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9, any case, with or
+/// without an extension ("nul.txt"). NUL opens the device even inside a folder on Windows 11; the rest do on 10.
+fn isDeviceName(seg: []const u8) bool {
+    const stem = std.mem.trimEnd(u8, seg[0 .. std.mem.findScalar(u8, seg, '.') orelse seg.len], " ");
+    for ([_][]const u8{ "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$" }) |d| if (std.ascii.eqlIgnoreCase(stem, d)) return true;
+    return stem.len == 4 and (std.ascii.startsWithIgnoreCase(stem, "COM") or std.ascii.startsWithIgnoreCase(stem, "LPT")) and std.ascii.isDigit(stem[3]);
+}
+
+/// `rel` with "_" in front of every device-name segment ("nul" -> "_nul"), as 7-Zip does.
+fn deviceSafe(gpa: Allocator, rel: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var segs = std.mem.splitAny(u8, rel, "/\\");
+    var first = true;
+    while (segs.next()) |seg| {
+        if (!first) try out.append(gpa, '\\');
+        first = false;
+        if (isDeviceName(seg)) try out.append(gpa, '_');
+        try out.appendSlice(gpa, seg);
+    }
+    return out.toOwnedSlice(gpa);
 }
 
 /// Characters a Windows name cannot hold (a zip from elsewhere can): "_" instead, as 7-Zip does.
@@ -1275,11 +1279,13 @@ pub fn extract(
         /// Started and not finished: when the extraction stops, this is the broken one.
         in_flight: ?[]const u8 = null,
         first_fail: ?sevenzip.OpResult = null,
+        /// Folders the archive lists: their times and attributes go back on after the files are in.
+        dirs: std.ArrayList(struct { path: []const u8, item: *const sevenzip.Item }) = .empty,
 
         fn dest(x: *@This(), raw: []const u8) ![]u8 {
             const r = try x.ar.dupe(u8, if (x.o.no_paths) fspath.basename(std.mem.trimEnd(u8, raw, "/\\")) else raw);
             sanitize(r);
-            const joined = try combine(x.ar, x.dest_full, r);
+            const joined = try combine(x.ar, x.dest_full, try deviceSafe(x.ar, r));
             return fullPath(x.ar, joined);
         }
 
@@ -1295,7 +1301,10 @@ pub fn extract(
             }
             x.ticker.setCurrent(it.path);
             if (it.is_dir) {
-                if (!x.o.no_paths) mkdirs(try x.dest(it.path)) catch {}; // no paths: no (empty) folders either
+                if (x.o.no_paths) return .skip; // no paths: no (empty) folders either
+                const d = try x.dest(it.path);
+                mkdirs(d) catch return .skip;
+                try x.dirs.append(x.ar, .{ .path = d, .item = it });
                 return .skip;
             }
             var path = try x.dest(it.path);
@@ -1334,6 +1343,7 @@ pub fn extract(
     var x: X = .{ .ar = ar, .io = io, .dest_full = dest_full, .o = options, .mode = mode, .on_conflict = on_conflict, .marking = zone != null, .ticker = .{ .to = progress } };
     const result = a.x.extract(indices, .{ .ctx = &x, .target = X.target, .done = X.done, .progress = x.ticker.sz() });
     if (x.in_flight) |p| if (!options.keep_broken) tryDelete(io, p);
+    for (x.dirs.items) |d| sevenzip.restoreDir(d.path, d.item); // C# (SevenZipSharp) restored them too
     // Cancelled or failed half way, what did land is marked all the same: an unmarked exe is the hole.
     if (zone) |z| mark(io, x.written.items, z, motw);
     result catch |e| {
@@ -2436,6 +2446,12 @@ test "names, sizes and parsers" {
     try testing.expect(marks(.Risky, "a.EXE") and marks(.Risky, "d.zip") and !marks(.Risky, "c.txt") and marks(.All, "c.txt") and !marks(.Never, "a.exe"));
     try testing.expect(escapes("C:\\d\\", "../x") and escapes("C:\\d\\", "a\\..\\..\\x") and escapes("C:\\d\\", "\\x") and escapes("C:\\d\\", "C:x"));
     try testing.expect(escapes("C:\\d\\", "...\\x") and !escapes("C:\\d\\", "./a/b") and !escapes("C:\\d\\", "a..b/c"));
+    try testing.expect(!escapes("C:\\d\\", "NUL") and !escapes("C:\\d\\", "a/nul.txt"));
+    for ([_][]const u8{ "CON", "nul", "aux.tar.gz", "COM1", "lpt9.x", "conin$", "Nul " }) |n| try testing.expect(isDeviceName(n));
+    for ([_][]const u8{ "CONS", "null", "COM", "COMX", "a.con", "" }) |n| try testing.expect(!isDeviceName(n));
+    const ds = try deviceSafe(testing.allocator, "a/con/b\\NUL.txt");
+    defer testing.allocator.free(ds);
+    try testing.expectEqualStrings("a\\_con\\b\\_NUL.txt", ds);
     const G: i64 = 1 << 30;
     const big = dictionaryFits(.{ .dictionary = G }, 10 * G, 8 * G);
     try testing.expect(!big.fits and big.need > 8 * G);

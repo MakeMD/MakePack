@@ -1453,6 +1453,21 @@ const FileBasicInfo = extern struct { ctime: i64 = 0, atime: i64 = 0, mtime: i64
 /// The archive's attribute bits we put back: READONLY, HIDDEN, SYSTEM, ARCHIVE.
 const keep_attrs: u32 = 0x1 | 0x2 | 0x4 | 0x20;
 
+/// A folder's mtime and kept attribute bits from its archive entry. Call it after everything inside was written
+/// (each new file changes its folder's mtime). Failure = the folder stays as it is.
+pub fn restoreDir(path: []const u8, item: *const Item) void {
+    var sb: [2048]u8 = undefined;
+    var fba: std.heap.FixedBufferAllocator = .init(&sb);
+    const wp = toPathW(fba.allocator(), path) catch return;
+    const share = w.FILE_SHARE_READ | w.FILE_SHARE_WRITE | w.FILE_SHARE_DELETE;
+    const h = w.CreateFileW(wp.ptr, w.FILE_WRITE_ATTRIBUTES, share, null, w.OPEN_EXISTING, w.FILE_FLAG_BACKUP_SEMANTICS, null);
+    if (h == w.INVALID_HANDLE_VALUE) return;
+    defer _ = w.CloseHandle(h);
+    // FILE_ATTRIBUTE_DIRECTORY must stay; 0 for both = nothing to set.
+    var info: FileBasicInfo = .{ .mtime = @bitCast(item.mtime), .attrs = if (item.attrib & keep_attrs != 0) (item.attrib & keep_attrs) | 0x10 else 0 };
+    _ = w.SetFileInformationByHandle(h, w.FileBasicInfo, &info, @sizeOf(FileBasicInfo));
+}
+
 /// IArchiveUpdateCallback (+IProgress) + ICryptoGetTextPassword2 (new data) + ICryptoGetTextPassword (repacking
 /// encrypted 7z blocks). ponytail: no IArchiveUpdateCallback2 - no 26.03 handler asks for it (only 7-Zip's UI
 /// multi-volume stream does); Engine splits volumes itself.

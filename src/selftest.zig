@@ -389,12 +389,16 @@ fn writeZip(t: *T, path: []const u8, entries: []const [2][]const u8) !void {
     try writeFile(t, path, aw.written());
 }
 
-/// File.SetLastWriteTime (FILETIME ticks, UTC).
+/// 2001-01-15 00:00 UTC (winter: zip's local DOS time cannot shift by DST): the empty folder's time.
+const old_unix = 979516800;
+const old_ticks: u64 = (old_unix + 11644473600) * 10_000_000;
+
+/// File.SetLastWriteTime / Directory.SetLastWriteTime (FILETIME ticks, UTC).
 fn setMtime(path: []const u8, ticks: u64) !void {
     const wp = try kit.win.toW(std.heap.smp_allocator, path);
     defer std.heap.smp_allocator.free(wp);
     const share: w.DWORD = w.FILE_SHARE_READ | w.FILE_SHARE_WRITE | w.FILE_SHARE_DELETE;
-    const h = w.CreateFileW(wp.ptr, w.FILE_WRITE_ATTRIBUTES, share, null, w.OPEN_EXISTING, w.FILE_ATTRIBUTE_NORMAL, null);
+    const h = w.CreateFileW(wp.ptr, w.FILE_WRITE_ATTRIBUTES, share, null, w.OPEN_EXISTING, w.FILE_FLAG_BACKUP_SEMANTICS, null); // folders too
     if (h == w.INVALID_HANDLE_VALUE) return error.FileNotFound;
     defer _ = w.CloseHandle(h);
     const ft: w.FILETIME = .{ .dwLowDateTime = @truncate(ticks), .dwHighDateTime = @truncate(ticks >> 32) };
@@ -477,6 +481,7 @@ fn setup(t: *T) !void {
     try writeFile(t, try join(t.ar, &.{ t.src, "sub", "deeper", "тест ïé.txt" }), "Привіт, світ! ïé\r\n");
     try writeFile(t, try join(t.ar, &.{ t.src, "empty.txt" }), "");
     try Io.Dir.cwd().createDirPath(t.io, try join(t.ar, &.{ t.src, "void", "deeper" })); // empty folders: same() checks they come back
+    try setMtime(try join(t.ar, &.{ t.src, "void", "deeper" }), old_ticks); // ... with their own time (emptyDirs)
     t.extra = try t.p("extra.txt");
     try writeFile(t, t.extra, "appended later");
     // Compressible text: on noise zip just stores every file, and the method under test never shows.
@@ -514,9 +519,13 @@ fn zipAes(t: *T) !void {
 }
 
 fn emptyDirs(t: *T) !void {
-    for ([_][]const u8{ "SevenZip", "Zip", "Tar" }) |k|
-        try t.must(dirExists(try t.p(try t.ar.print("out-{s}\\src\\void\\deeper", .{k}))), "{s}: the empty folder did not come back", .{k});
-    t.say("OK empty_dirs", .{});
+    for ([_][]const u8{ "SevenZip", "Zip", "Tar" }) |k| {
+        const d = try t.p(try t.ar.print("out-{s}\\src\\void\\deeper", .{k}));
+        try t.must(dirExists(d), "{s}: the empty folder did not come back", .{k});
+        const got = (try Io.Dir.cwd().statFile(t.io, d, .{})).mtime.toSeconds();
+        try t.must(@abs(got - old_unix) <= 2, "{s}: the folder's time was not restored ({d})", .{ k, got });
+    }
+    t.say("OK empty_dirs (with their times)", .{});
 }
 
 fn appendCheck(t: *T) !void {
@@ -1288,6 +1297,14 @@ fn extractOptions(t: *T) !void {
         try t.must(!fileExists(try join(t.ar, &.{ home, "slip2-out", n })) and !fileExists(try join(t.ar, &.{ in2, n })), "zip-slip: {s} was written", .{n});
     try t.must(!fileExists(abs) and fileExists(try join(t.ar, &.{ in2, "ok.txt" })), "zip-slip: an absolute path got through", .{});
 
+    // Device names (NUL opens the device even inside a folder on Windows 11): extracted with "_" in front, as 7-Zip.
+    const dev = try join(t.ar, &.{ home, "devices.zip" });
+    try writeZip(t, dev, &.{ .{ "NUL", "n" }, .{ "sub/con.txt", "c" }, .{ "Com1.log", "1" } });
+    const dev_out = try join(t.ar, &.{ home, "devices-out" });
+    try xo(t, dev, dev_out, .{});
+    for ([_][]const u8{ "_NUL", "sub\\_con.txt", "_Com1.log" }) |n|
+        try t.must(fileExists(try join(t.ar, &.{ dev_out, n })), "device name: {s} missing", .{n});
+
     // Deleting after extraction: a .001 set goes to the Recycle Bin whole.
     const set = try join(t.ar, &.{ home, "set.7z" });
     try compress(t, &.{t.src}, set, .SevenZip, .{ .level = .None, .volume_size = 300 << 10 });
@@ -1295,7 +1312,7 @@ fn extractOptions(t: *T) !void {
     try engine.recycleArchive(t.gpa, t.io, try engine.part(t.ar, set, 1), &t.diag);
     try t.must((try namesLike(t, home, "set.7z.")).len == 0, "parts left after recycling the set", .{});
     _ = try fromRecycleBin(t);
-    t.say("OK extract_options (no paths, newer, existing, broken, zip-slip, recycle set)", .{});
+    t.say("OK extract_options (no paths, newer, existing, broken, zip-slip, device names, recycle set)", .{});
 }
 
 fn shellNew(t: *T) !void {
