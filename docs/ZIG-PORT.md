@@ -1,9 +1,9 @@
 # MakePack Zig port - handoff
 
-Branch `zig`. The C# build in `legacy/` is the specification (Engine.cs, Program.cs incl. `--selftest`, Cli.cs,
-Assoc.cs, Settings.cs, Strings.cs, Shell.cs, forms), plus `legacy/shell/MakePackShell.cpp` + `shell/test`,
-`tools/bugtest.ps1` (CLI black box), `docs/*.md`, `.scratch/*/issues/*.md` (ticket decisions, Ukrainian).
-Zig 0.17.1 at `%LOCALAPPDATA%\Programs\zig\0.17.1\zig.exe`; read `../MakeKit/docs/ZIG-0.17-NOTES.md` first.
+`master` (2.0.0). The C# 1.x build is the behaviour spec, in git history only: `git show ce29887:legacy/<path>`
+(Engine.cs, Program.cs incl. `--selftest`, Cli.cs, Assoc.cs, Settings.cs, Strings.cs, Shell.cs, forms,
+`legacy/shell/MakePackShell.cpp`); plus `tools/bugtest.ps1` (CLI + GUI black box), `docs/*.md`.
+Zig 0.17.1 (on PATH, `%LOCALAPPDATA%\Programs\zig\0.17.1`); read `../MakeKit/docs/ZIG-0.17-NOTES.md` first.
 
 ## Build steps
 
@@ -187,26 +187,38 @@ The full contract is the module doc + doc comments of those three files; the ess
   Esc on a drop-down, open Cancel, compress guards, Find in an archive, password windows, Assoc footer; the
   queue's conflict question now runs as `readonly_target_overwrite` instead of a SKIP). Combo values are read from
   the item's `value` (`Value-Of`); screenshots go through `Save-AutoScreenshot -Png`.
+- 2026-11-11: `types.globIgnoreCase` (the CLI's glob, moved; mw_model uses it too), `sevenzip.restoreDir`,
+  `single.createPipe` returns an overlapped first-instance handle (`accept` reads it with a timeout).
 
-## Open items
-- **GUI phase**: MP-G1 / MP-G2 delivered (see their reports); `tools/bugtest.ps1` runs all cases on the Zig app.
-  Not automated: drag-and-drop (`tools/dragtest.ps1`, manual), OS file dialogs.
-- Error text: `engine.friendly` falls back to the Zig error name (AccessDenied, FileBusy, NoSpaceLeft, ...) where C#
-  showed the localized Windows message. Map via FormatMessageW or a table of S strings.
-- Long paths: recycle() (SHFileOperationW) cannot take `\\?\` at all (every other file helper adds it).
-- Case folding: engine buildDict/append conflict maps and the report sort fold ASCII only, so Cyrillic names that
-  differ only in case are not seen as conflicts (C#: OrdinalIgnoreCase).
-- Extracted folders get no mtime/attributes (C# restored them). CON/AUX device names get no special handling.
-- sevenzip: no last-resort open pass (signature-less handlers under a foreign extension, zip/rar SFX = PE);
-  a truncated .gz opens clean (its end is only seen when decoding: Test reports it); extract()
-  does not dedupe indices; multi-volume RAR / .z01 through IArchiveOpenVolumeCallback untested.
-- Data-loss windows kept from C#: convert recycles the source before the final move (a failed move leaves only the
-  Recycle Bin copy); convert target==source without delete_original replaces in place; an in-place edit drops the
-  archive's own Zone.Identifier.
-- CLI: interactive-console output (AttachConsole when there are no std handles) untested (redirected runs work);
-  DOS mask corner cases (`*.`, `?` before a dot) not reproduced; exit 255 (Ctrl+C) untested; numeric QuickFormat
-  not accepted; "Пропущено 2 записів" has no plural form (same as Strings.cs).
-- single: no FILE_FLAG_FIRST_PIPE_INSTANCE / read timeout (a client that never closes blocks the serve thread;
-  C# had the same).
+## Open items (reviewed 2026-11-11)
+
+Closed 2026-11-11:
+- Error text: `engine.friendly` gives Windows' localized message (FormatMessageW) for std's errors; the code table and
+  FormatMessageW moved to `kit.win.errorCode/sysMessage/errorText` (MakeCleaner uses them too).
+- Case folding: buildDict/append conflict maps and the report sort fold UTF-16 (Cyrillic included, done earlier); the
+  main window's / Find's masks (`mw_model.matches`) now use `types.globIgnoreCase` (CompareStringOrdinal per unit),
+  the same glob as the CLI.
+- Extracted folders get their mtime and READONLY/HIDDEN/SYSTEM/ARCHIVE bits back (`sevenzip.restoreDir`, after the
+  files are in); selftest `empty_dirs` checks the time for 7z, zip and tar.
+- Device names: an entry named CON/PRN/AUX/NUL/COM0-9/LPT0-9/CONIN$/CONOUT$ (any extension) extracts as `_<name>`
+  (7-Zip's rule) instead of opening the device (bare NUL still is one inside a folder on Windows 11) or being
+  reported as a path-traversal attempt. Selftest `extract_options` + engine unit test.
+- single: the pipe is created with FILE_FLAG_FIRST_PIPE_INSTANCE (a name someone else holds fails instead of sharing
+  its clients) and read overlapped with a 5 s limit from connect to close (a client that never closes is dropped).
+- MakePack.exe has a VERSIONINFO resource (app.rc; numbers from build.zig.zon through build.zig `versionDefines`).
+- convert already moves the new archive in place before recycling the source (this list was stale).
+
+Left deliberately (each needs a real environment, fixtures or a design decision; none is a reported bug):
+- recycle() long paths: SHFileOperationW cannot take `\\?\`; IFileOperation is the upgrade path.
+- sevenzip: no last-resort open pass (signature-less handlers under a foreign extension, zip/rar SFX = PE); a
+  truncated .gz opens clean (Test reports it); extract() does not dedupe indices; multi-volume RAR / .z01 through
+  IArchiveOpenVolumeCallback untested.
+- Kept from C#: convert target==source without delete_original replaces in place (callers forbid it); an in-place
+  edit drops the archive's own Zone.Identifier. Entry names with trailing dots/spaces are not renamed (Windows
+  strips them).
+- CLI: interactive-console output (AttachConsole) and exit 255 (Ctrl+C) need a real console; DOS mask corner cases
+  (`?` before a dot); numeric QuickFormat not accepted; "Пропущено 2 записів" has no plural form (as Strings.cs).
+- `main_window.zig` `version` (About) is still kept by hand next to build.zig.zon.
+- GUI: drag-and-drop (`tools/dragtest.ps1`, real SendInput, manual only) and OS file dialogs are not automated.
 - Shell: not run in a real Explorer (sparse package install forbidden in tests); no panic containment inside the
   host; `dir()` ignores a GetModuleHandleExW failure; 64 KB arena per launch (grows with huge selections).
