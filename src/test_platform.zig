@@ -613,6 +613,27 @@ test "single: a client that wrote and closed before ConnectNamedPipe (ERROR_NO_D
     try testing.expectEqualStrings("C:\\a.7z", cap.lists.items[0][1]);
 }
 
+test "single: the name is ours alone, and a client that never closes is dropped after the read timeout" {
+    var nb: [64]u8 = undefined;
+    const name = testName(&nb);
+    var cap: Captured = .{ .arena = .init(testing.allocator) };
+    defer cap.arena.deinit();
+    const pipe = try reg.toW(testing.allocator, try std.mem.concat(cap.arena.allocator(), u8, &.{ "\\\\.\\pipe\\", name }));
+    defer testing.allocator.free(pipe);
+    const h = try single.createPipe(pipe);
+    defer _ = kit.w.CloseHandle(h);
+    try testing.expectError(error.PipeFailed, single.createPipe(pipe)); // FILE_FLAG_FIRST_PIPE_INSTANCE
+    const c = kit.w.CreateFileW(pipe.ptr, @bitCast(@as(i32, kit.w.GENERIC_WRITE)), 0, null, kit.w.OPEN_EXISTING, 0, null);
+    try testing.expect(c != kit.w.INVALID_HANDLE_VALUE);
+    defer _ = kit.w.CloseHandle(c);
+    var put: kit.w.DWORD = 0;
+    _ = kit.w.WriteFile(c, "x\r\n", 3, &put, null); // ... and then never closes
+    const t0 = kit.w.GetTickCount64();
+    try testing.expectError(error.PipeFailed, single.accept(testing.allocator, h, cap.handler()));
+    try testing.expect(kit.w.GetTickCount64() - t0 < 8000);
+    try testing.expectEqual(@as(usize, 0), cap.lists.items.len);
+}
+
 test "single: serve keeps accepting; send gives up after 1.5 s when nobody listens" {
     var nb: [64]u8 = undefined;
     const name = testName(&nb);

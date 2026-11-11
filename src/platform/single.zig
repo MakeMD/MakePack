@@ -109,23 +109,49 @@ pub fn serveOne(gpa: Allocator, pipe: [:0]const u16, handler: Handler) !void {
 }
 
 /// Like .NET's NamedPipeServerStream: byte mode, unlimited instances, remote clients rejected (nobody on the
-/// network may hand us arguments); the default DACL lets only this user (and admins) write.
+/// network may hand us arguments); the default DACL lets only this user (and admins) write. First instance only:
+/// a name another process already holds (a squatter) fails instead of sharing its clients; overlapped, so a
+/// client that never finishes cannot hold the serve thread (accept's read timeout).
 pub fn createPipe(pipe: [:0]const u16) !w.HANDLE {
     const mode = w.PIPE_TYPE_BYTE | w.PIPE_WAIT | w.PIPE_REJECT_REMOTE_CLIENTS;
-    const h = w.CreateNamedPipeW(pipe.ptr, w.PIPE_ACCESS_INBOUND, mode, w.PIPE_UNLIMITED_INSTANCES, 0, 4096, 0, null);
+    const open = w.PIPE_ACCESS_INBOUND | w.FILE_FLAG_FIRST_PIPE_INSTANCE | w.FILE_FLAG_OVERLAPPED;
+    const h = w.CreateNamedPipeW(pipe.ptr, open, mode, w.PIPE_UNLIMITED_INSTANCES, 0, 4096, 0, null);
     if (h == w.INVALID_HANDLE_VALUE) return error.PipeFailed;
     return h;
 }
 
 /// The arguments of one invocation never come near this (a command line is at most 32k characters).
 const max_payload = 1 << 20;
+/// From connect to the client's close; send() writes its whole list at once, so this is only ever hit by a client
+/// that hangs (the serve thread then drops it and takes the next one).
+const read_timeout_ms = 5000;
+
+/// Waits for an overlapped call on `h` up to `ms`; false = failed or timed out (then cancelled and drained).
+/// `n` = bytes moved. A closed client (broken pipe / no data) counts as done with n = 0.
+fn finish(h: w.HANDLE, ov: *w.OVERLAPPED, ms: u32, n: *w.DWORD) bool {
+    if (w.WaitForSingleObject(ov.hEvent, ms) != w.WAIT_OBJECT_0) {
+        _ = w.CancelIoEx(h, ov);
+        _ = w.GetOverlappedResult(h, ov, n, 1);
+        return false;
+    }
+    if (w.GetOverlappedResult(h, ov, n, 0) != 0) return true;
+    n.* = 0;
+    const e = w.GetLastError();
+    return e == w.ERROR_BROKEN_PIPE or e == w.ERROR_NO_DATA;
+}
 
 /// Waits for the client on `h` (an instance from createPipe), reads to EOF, hands the lines over.
 pub fn accept(gpa: Allocator, h: w.HANDLE, handler: Handler) !void {
     // A client that connected before this call: ERROR_PIPE_CONNECTED; one that also wrote its list and closed
     // already: ERROR_NO_DATA - its bytes are still buffered (WaitForConnectionAsync counts both as connected).
-    if (w.ConnectNamedPipe(h, null) == 0) switch (w.GetLastError()) {
+    const ev = w.CreateEventW(null, 1, 0, null) orelse return error.PipeFailed;
+    defer _ = w.CloseHandle(ev);
+    var ov: w.OVERLAPPED = std.mem.zeroes(w.OVERLAPPED);
+    ov.hEvent = ev;
+    var n: w.DWORD = 0;
+    if (w.ConnectNamedPipe(h, &ov) == 0) switch (w.GetLastError()) {
         w.ERROR_PIPE_CONNECTED, w.ERROR_NO_DATA => {},
+        w.ERROR_IO_PENDING => if (!finish(h, &ov, w.INFINITE, &n)) return error.PipeFailed,
         else => return error.PipeFailed,
     };
     defer _ = w.DisconnectNamedPipe(h);
@@ -133,15 +159,19 @@ pub fn accept(gpa: Allocator, h: w.HANDLE, handler: Handler) !void {
     var got: std.ArrayList(u8) = .empty;
     defer got.deinit(gpa);
     var buf: [4096]u8 = undefined;
+    const deadline = w.GetTickCount64() + read_timeout_ms;
     while (true) {
-        var n: w.DWORD = 0;
-        if (w.ReadFile(h, &buf, buf.len, &n, null) == 0) {
-            const e = w.GetLastError();
-            if (e == w.ERROR_BROKEN_PIPE or e == w.ERROR_NO_DATA) break; // the client closed: end of its list
-            return error.PipeFailed;
-        }
+        n = 0;
+        if (w.ReadFile(h, &buf, buf.len, &n, &ov) == 0) switch (w.GetLastError()) {
+            w.ERROR_BROKEN_PIPE, w.ERROR_NO_DATA => break, // the client closed: end of its list
+            w.ERROR_IO_PENDING => {
+                const left: u32 = @intCast(deadline -| w.GetTickCount64());
+                if (!finish(h, &ov, left, &n)) return error.PipeFailed;
+            },
+            else => return error.PipeFailed,
+        };
         if (n == 0) break;
-        if (got.items.len + n > max_payload) return error.PipeFailed; // ponytail: a cap, no read timeout
+        if (got.items.len + n > max_payload) return error.PipeFailed;
         try got.appendSlice(gpa, buf[0..n]);
     }
     const args = try splitLines(gpa, got.items);
