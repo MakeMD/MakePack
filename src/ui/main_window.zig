@@ -766,7 +766,7 @@ pub const MainWindow = struct {
                 for (cols, 0..) |c, ci| {
                     _ = im.ImGui_TableSetColumnIndex(@intCast(ci));
                     if (c == .name) {
-                        kit.ui.icon(rowIcon(r), 16);
+                        lineIcon(rowIcon(r), im.ImGui_GetTextLineHeight()); // 22 px rows (kit table pitch)
                         im.ImGui_SameLine();
                         if (mw.edit == i) {
                             mw.renameBox();
@@ -869,7 +869,7 @@ pub const MainWindow = struct {
             im.ImGui_SetCursorPos(.{ .x = origin.x + @as(f32, @floatFromInt(i / per_col)) * col_w, .y = origin.y + @as(f32, @floatFromInt(i % per_col)) * line });
             im.ImGui_PushIDInt(@intCast(i));
             defer im.ImGui_PopID();
-            kit.ui.icon(rowIcon(r), 16);
+            lineIcon(rowIcon(r), im.ImGui_GetTextLineHeight());
             im.ImGui_SameLine();
             if (mw.edit == i) {
                 im.ImGui_SetNextItemWidth(col_w - 24 * s);
@@ -992,8 +992,8 @@ pub const MainWindow = struct {
             mw.loadChildren(n);
             im.ImGui_SetNextItemOpen(true, im.ImGuiCond_Always);
         }
-        const space = im.ImGui_CalcTextSize(" ").x;
-        const pad: usize = @intFromFloat(@ceil((18 * s) / @max(1, space)));
+        const gap = kit.icons.pixels(16) + im.ImGui_GetStyle().*.ItemSpacing.x / 2; // the icon + air before the name
+        const pad: usize = @intFromFloat(@ceil(gap / spaceWidth()));
         var lb: [1400]u8 = undefined;
         var o: std.Io.Writer = .fixed(lb[0 .. lb.len - 1]);
         o.splatByteAll(' ', @min(pad, 40)) catch {};
@@ -1013,7 +1013,7 @@ pub const MainWindow = struct {
             im.ImGui_SetScrollHereY(0.5);
             // A deep folder in a narrow tree: scroll right until its name shows (tree does the same).
             const wx = im.ImGui_GetWindowPos().x;
-            const label_end = ix + 20 * s + im.ImGui_CalcTextSize(lb[0..len :0].ptr + @min(pad, 40)).x;
+            const label_end = ix + gap + im.ImGui_CalcTextSize(lb[0..len :0].ptr + @min(pad, 40)).x;
             if (label_end > wx + im.ImGui_GetWindowWidth() - im.ImGui_GetStyle().*.ScrollbarSize)
                 im.ImGui_SetScrollX(@max(0, ix - wx + im.ImGui_GetScrollX() - 24 * s));
         }
@@ -1040,12 +1040,12 @@ pub const MainWindow = struct {
         im.ImGui_IndentEx(6 * s);
         defer im.ImGui_UnindentEx(6 * s);
         im.ImGui_AlignTextToFramePadding();
-        lineIcon(.drive);
+        lineIcon(.drive, im.ImGui_GetFrameHeight());
         const root = if (mw.m.dir.len >= 3 and mw.m.dir[1] == ':') mw.m.dir[0..3] else mw.m.dir;
         tooltip("{s}", .{root});
         if (mw.m.a != null and mw.m.encrypted) {
             im.ImGui_SameLine();
-            lineIcon(.lock);
+            lineIcon(.lock, im.ImGui_GetFrameHeight());
             im.ImGui_SetItemTooltipUnformatted(S.encrypted.get().ptr);
         }
         var sb: [512]u8 = undefined;
@@ -1766,15 +1766,22 @@ var menu_gutter = false;
 fn gutter() []const u8 {
     if (!menu_gutter) return "";
     const spaces = "                "; // 16
-    const n = @ceil((kit.icons.pixels(16) + im.ImGui_GetStyle().*.ItemSpacing.x) / im.ImGui_CalcTextSize(" ").x);
+    const n = @ceil((kit.icons.pixels(16) + im.ImGui_GetStyle().*.ItemSpacing.x) / spaceWidth());
     return spaces[0..@min(spaces.len, @as(usize, @intFromFloat(n)))];
 }
 
-/// A 16 px kit icon centred on a frame-high line (the status bar's text sits AlignTextToFramePadding-low).
-fn lineIcon(name: kit.icons.Name) void {
+/// One space of the current font. CalcTextSize rounds a width up to a whole pixel (" " = 4 px for Fira's 3.1),
+/// so 16 spaces are measured at once.
+fn spaceWidth() f32 {
+    return @max(1, im.ImGui_CalcTextSize("                ").x / 16);
+}
+
+/// A 16 px kit icon centred on an `h` px high line: GetFrameHeight() for the status bar (its text sits
+/// AlignTextToFramePadding-low), GetTextLineHeight() for list rows (the icon then adds no height to the row).
+fn lineIcon(name: kit.icons.Name, h: f32) void {
     const p = im.ImGui_GetCursorScreenPos();
-    im.ImGui_Dummy(.{ .x = kit.icons.pixels(16), .y = im.ImGui_GetFrameHeight() });
-    drawIcon16(name, p, im.ImGui_GetFrameHeight());
+    im.ImGui_Dummy(.{ .x = kit.icons.pixels(16), .y = h });
+    drawIcon16(name, p, h);
 }
 
 fn iconItem(icon: kit.icons.Name, text: S.Str, id: []const u8, shortcut: ?[*:0]const u8) bool {

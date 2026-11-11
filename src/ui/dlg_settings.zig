@@ -69,7 +69,9 @@ pub const Settings = struct {
 
         im.ImGui_TextUnformatted(S.profiles.get());
         const top = im.ImGui_GetCursorPosY();
-        if (im.ImGui_BeginListBox("##settings_profiles", .{ .x = 370 * s, .y = 128 * s })) {
+        // As tall as the four buttons beside it.
+        const list_h = 4 * im.ImGui_GetFrameHeight() + 3 * im.ImGui_GetStyle().*.ItemSpacing.y;
+        if (im.ImGui_BeginListBox("##settings_profiles", .{ .x = 370 * s, .y = list_h })) {
             for (f.list.items, 0..) |p, i| {
                 var nb: [700]u8 = undefined;
                 const name = std.mem.print(&nb, "{s}{s}{s}", .{ p.Name, if (p.IsDefault) S.defaultMark.get() else "", if (p.InMenu) S.menuMark.get() else "" }) catch p.Name;
@@ -253,7 +255,8 @@ pub const Favorites = struct {
             _ = f.items.orderedRemove(f.sel);
             if (f.sel > 0 and f.sel >= f.items.items.len) f.sel -= 1;
         }
-        im.ImGui_SetCursorPos(.{ .x = bx, .y = top + 212 * s });
+        // OK + Cancel end level with the list's bottom edge.
+        im.ImGui_SetCursorPos(.{ .x = bx, .y = top + 276 * s - 2 * im.ImGui_GetFrameHeight() - im.ImGui_GetStyle().*.ItemSpacing.y });
         if (sideButton(S.ok.get(), "favorites_ok", 104) or (D.enterPressed() and !f.renaming)) {
             const a = settings.arena();
             const list = a.alloc(settings.Favorite, f.items.items.len) catch return false;

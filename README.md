@@ -148,4 +148,4 @@ tools\build.ps1 -NoSign          # пакет меню Windows 11 без під�
 
 ## Ліцензії
 
-MakePack — MIT (`LICENSE`). `7z.dll` — GNU LGPL з обмеженням unRAR, див. `THIRD-PARTY-NOTICES.txt`.
+MakePack — MIT (`LICENSE`). `7z.dll` — GNU LGPL з обмеженням unRAR; шрифт інтерфейсу Fira Sans (вбудований) — SIL OFL 1.1; Dear ImGui — MIT. Усе в `THIRD-PARTY-NOTICES.txt` (інсталятор кладе його поруч із програмою).
