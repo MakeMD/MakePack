@@ -30,7 +30,7 @@ tools\build.ps1 -Version 1.2.3   # своя версія
 tools\build.ps1 -NoSign          # пакет меню Windows 11 без підпису (суха збірка, такий пакет не встановиться)
 ```
 
-Потрібні Zig 0.17.1 у `%LOCALAPPDATA%\Programs\zig\0.17.1\`, сусідня тека `..\MakeKit`, Inno Setup 6 і Windows SDK (`makeappx`, `signtool`; для підпису одноразово `tools\new_cert.ps1`). Python потрібен лише для іконки. Кроки: `zig build -Doptimize=ReleaseSafe` → `dist\app` (MakePack.exe, 7z.dll, 7z.sfx) → `tools\build_shell.ps1` → `dist\shell` → ISCC. Результат: `dist\MakePack-Setup-<версія>.exe`.
+Потрібні Zig 0.17.1 у `%LOCALAPPDATA%\Programs\zig\0.17.1\`, сусідня тека `..\MakeKit` (`git clone https://github.com/MakeMD/MakeKit`), Inno Setup 6 і Windows SDK (`makeappx`, `signtool`; для підпису одноразово `tools\new_cert.ps1`). Кроки: `zig build -Doptimize=ReleaseSafe` → `dist\app` (MakePack.exe, 7z.dll, 7z.sfx) → `tools\build_shell.ps1` → `dist\shell` → ISCC. Результат: `dist\MakePack-Setup-<версія>.exe`.
 
 ## Контекстне меню та асоціації
 
