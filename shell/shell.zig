@@ -2,7 +2,8 @@
 //! Port of legacy/shell/MakePackShell.cpp. One IExplorerCommand class (root + subcommands), registered by the sparse
 //! package in shell/package. The classic registry verbs (src/platform/assoc.zig) stay as they are for Windows 10 and
 //! "Show more options". Every action just starts MakePack.exe from this DLL's folder with the same CLI the classic
-//! verbs use. Reads HKCU\Software\MakePack MenuItems (DWORD), QuickExt and MenuProfiles\NN {Name, Ext, Separate}
+//! verbs use. Reads HKCU\Software\MakePack MenuItems (DWORD), QuickExt, Language (MakePack's UI language: "Auto",
+//! "pl"... - the menu titles follow it, else the Windows display language) and MenuProfiles\NN {Name, Ext, Separate}
 //! fresh on every call (written by src/platform/assoc.zig). shell/test/harness.cpp drives it like Explorer.
 //! This module cannot import src/: the lists and strings below are its own copies, as in the C++.
 const std = @import("std");
@@ -10,6 +11,7 @@ const w = @import("kit").w;
 
 const Allocator = std.mem.Allocator;
 const L = std.unicode.utf8ToUtf16LeStringLiteral;
+const Lang = @import("kit").i18n.Lang;
 const HRESULT = w.HRESULT;
 const S_OK: HRESULT = 0;
 
@@ -207,36 +209,64 @@ fn visible(a: Allocator, k: Kind, s: Selection, profile: w.ULONG) Allocator.Erro
     };
 }
 
+/// The menu's own words (MakePack's other strings live in src/i18n/, which this module cannot import).
+/// `to` and `add_to` wrap a name: Extract to "<name>\" / Add to "<name>.7z".
+const Words = struct {
+    open: []const u16,
+    here: []const u16,
+    each: []const u16,
+    to: [2][]const u16,
+    add: []const u16,
+    add_to: [2][]const u16,
+    separate: []const u16, // + ".7z (Profile)"
+};
+
+fn words(l: Lang) Words {
+    @setEvalBranchQuota(20_000); // the UTF-16 literals below
+    return switch (l) {
+        .en => .{ .open = L("Open with MakePack"), .here = L("Extract here"), .each = L("Extract each to its own folder"), .to = .{ L("Extract to \""), L("\\\"") }, .add = L("Add to archive…"), .add_to = .{ L("Add to \""), L("\"") }, .separate = L("Each to its own ") },
+        .uk => .{ .open = L("Відкрити в MakePack"), .here = L("Розпакувати тут"), .each = L("Розпакувати кожен в окрему теку"), .to = .{ L("Розпакувати в «"), L("\\»") }, .add = L("Додати в архів…"), .add_to = .{ L("Додати в «"), L("»") }, .separate = L("Кожен в окремий ") },
+        .pl => .{ .open = L("Otwórz w MakePack"), .here = L("Wypakuj tutaj"), .each = L("Wypakuj każdy do osobnego folderu"), .to = .{ L("Wypakuj do „"), L("\\”") }, .add = L("Dodaj do archiwum…"), .add_to = .{ L("Dodaj do „"), L("”") }, .separate = L("Każdy osobno do ") },
+        .de => .{ .open = L("Mit MakePack öffnen"), .here = L("Hier entpacken"), .each = L("Jedes in einen eigenen Ordner entpacken"), .to = .{ L("Entpacken nach „"), L("\\“") }, .add = L("Zu Archiv hinzufügen…"), .add_to = .{ L("Hinzufügen zu „"), L("“") }, .separate = L("Jedes einzeln als ") },
+        .es => .{ .open = L("Abrir con MakePack"), .here = L("Extraer aquí"), .each = L("Extraer cada uno en su propia carpeta"), .to = .{ L("Extraer en «"), L("\\»") }, .add = L("Añadir al archivo…"), .add_to = .{ L("Añadir a «"), L("»") }, .separate = L("Cada uno en su propio ") },
+        .fr => .{ .open = L("Ouvrir avec MakePack"), .here = L("Extraire ici"), .each = L("Extraire chacun dans son propre dossier"), .to = .{ L("Extraire vers «\u{A0}"), L("\\\u{A0}»") }, .add = L("Ajouter à l’archive…"), .add_to = .{ L("Ajouter à «\u{A0}"), L("\u{A0}»") }, .separate = L("Chacun dans son propre ") },
+    };
+}
+
+/// Software\MakePack Language (MakePack's Settings writes it: "Auto", "pl"...), else the Windows display language.
+fn language() Lang {
+    var buf: [16]u16 = undefined;
+    var size: w.DWORD = @sizeOf([16]u16);
+    if (w.RegGetValueW(hkcu(), root_key, L("Language"), w.RRF_RT_REG_SZ, null, &buf, &size) == 0) {
+        const v = std.mem.sliceTo(&buf, 0);
+        var b: [16]u8 = undefined;
+        for (v, 0..) |c, i| b[i] = std.math.cast(u8, c) orelse '?';
+        if (Lang.parse(b[0..v.len])) |l| return l; // "Auto" / unknown -> Windows
+    }
+    return @import("kit").i18n.system();
+}
+
 fn title(a: Allocator, k: Kind, s: Selection, profile: w.ULONG) Allocator.Error![]const u16 {
-    @setEvalBranchQuota(10_000); // the UTF-16 literals below
-    const uk = w.GetUserDefaultUILanguage() & 0x3ff == w.LANG_UKRAINIAN; // PRIMARYLANGID; everything else: English
+    const t = words(language());
     const cat = std.mem.concat;
     switch (k) {
         .profile => {
             const list = try menuProfiles(a);
             if (profile >= list.len) return L("MakePack");
             const p = list[profile];
-            if (p.separate) return cat(a, u16, &.{ if (uk) L("Кожен в окремий ") else L("Each to its own "), p.ext, L(" ("), p.name, L(")") });
-            return if (uk)
-                cat(a, u16, &.{ L("Додати в «"), archiveBase(s.paths), p.ext, L("» ("), p.name, L(")") })
-            else
-                cat(a, u16, &.{ L("Add to \""), archiveBase(s.paths), p.ext, L("\" ("), p.name, L(")") });
+            if (p.separate) return cat(a, u16, &.{ t.separate, p.ext, L(" ("), p.name, L(")") });
+            return cat(a, u16, &.{ t.add_to[0], archiveBase(s.paths), p.ext, t.add_to[1], L(" ("), p.name, L(")") });
         },
-        .open => return if (uk) L("Відкрити в MakePack") else L("Open with MakePack"),
-        .here => return if (uk) L("Розпакувати тут") else L("Extract here"),
+        .open => return t.open,
+        .here => return t.here,
         .to => {
-            if (s.paths.len != 1) return if (uk) L("Розпакувати кожен в окрему теку") else L("Extract each to its own folder");
-            const b = baseName(s.paths[0]);
-            return if (uk) cat(a, u16, &.{ L("Розпакувати в «"), b, L("\\»") }) else cat(a, u16, &.{ L("Extract to \""), b, L("\\\"") });
+            if (s.paths.len != 1) return t.each;
+            return cat(a, u16, &.{ t.to[0], baseName(s.paths[0]), t.to[1] });
         },
-        .add => return if (uk) L("Додати в архів…") else L("Add to archive…"),
+        .add => return t.add,
         .quick => {
             var buf: [32]u16 = undefined;
-            const ext = quickExt(&buf);
-            return if (uk)
-                cat(a, u16, &.{ L("Додати в «"), archiveBase(s.paths), ext, L("»") })
-            else
-                cat(a, u16, &.{ L("Add to \""), archiveBase(s.paths), ext, L("\"") });
+            return cat(a, u16, &.{ t.add_to[0], archiveBase(s.paths), quickExt(&buf), t.add_to[1] });
         },
         .root => return L("MakePack"),
     }
@@ -669,6 +699,40 @@ test "dir: the folder of the module holding this code (here the test exe), never
     var buf: [32768]u16 = undefined;
     const host = buf[0..w.GetModuleFileNameW(null, &buf, buf.len)];
     try testing.expectEqualSlices(u16, host[0..std.mem.findScalarLast(u16, host, '\\').?], try dir(a));
+}
+
+test "titles follow Software\\MakePack Language, else the Windows display language" {
+    var key: w.HKEY = null;
+    var rnd: [4]u8 = undefined;
+    testing.io.random(&rnd);
+    var name_buf: [64]u8 = undefined;
+    const name = try std.mem.print(&name_buf, "Software\\MakePackTest-shell-{x}", .{rnd});
+    const wname = u(testing.allocator, name);
+    defer testing.allocator.free(wname);
+    try testing.expectEqual(0, w.RegCreateKeyExW(hkcu(), wname, 0, null, 0, w.KEY_ALL_ACCESS, null, &key, null));
+    defer {
+        _ = w.RegOverridePredefKey(hkcu(), null);
+        _ = w.RegCloseKey(key);
+        _ = w.RegDeleteTreeW(hkcu(), wname);
+    }
+    try testing.expectEqual(0, w.RegOverridePredefKey(hkcu(), key));
+    var arena = scratch();
+    defer arena.deinit();
+    const a = arena.allocator();
+    const one: Selection = .{ .count = 1, .paths = &.{u(a, "C:\\nowhere-makepack\\Звіт.tar.gz")} };
+
+    try testing.expectEqualSlices(u16, words(@import("kit").i18n.system()).open, try title(a, .open, one, 0)); // no value
+    for ([_][]const u8{ "pl", "Auto", "fr-FR", "xx" }, [_]?Lang{ .pl, null, .fr, null }) |v, want| {
+        const wv = u(a, v);
+        try testing.expectEqual(0, w.RegSetKeyValueW(key, root_key, L("Language"), w.REG_SZ, wv.ptr, @intCast((wv.len + 1) * 2)));
+        try testing.expectEqualSlices(u16, words(want orelse @import("kit").i18n.system()).here, try title(a, .here, one, 0));
+    }
+    try testing.expectEqual(0, w.RegSetKeyValueW(key, root_key, L("Language"), w.REG_SZ, L("pl"), 6));
+    try expectU("Wypakuj do „Звіт\\”", try title(a, .to, one, 0));
+    try testing.expectEqual(0, w.RegSetKeyValueW(key, root_key, L("Language"), w.REG_SZ, L("fr"), 6));
+    try expectU("Ajouter à «\u{A0}Звіт.tar.7z\u{A0}»", try title(a, .quick, one, 0)); // no QuickExt = .7z
+    try testing.expectEqual(0, w.RegSetKeyValueW(key, root_key, L("Language"), w.REG_SZ, L("en"), 6));
+    try expectU("Extract to \"Звіт\\\"", try title(a, .to, one, 0));
 }
 
 test "COM lifetime: every object counts until its last Release (DllCanUnloadNow)" {

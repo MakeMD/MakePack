@@ -1,5 +1,5 @@
 # MakePack black-box bug tests (Zig/ImGui app). Pure ASCII. PowerShell 5.1.
-# Usage: tools\bugtest.ps1 [-Exe <path>] [-Only <testname>] [-Screen <n>]
+# Usage: tools\bugtest.ps1 [-Exe <path>] [-Only <testname>] [-Screen <n>] [-Lang uk|en]
 # -Screen: the monitor every test window opens on (MAKEKIT_DISPLAY=\\.\DISPLAY<n>, default 1).
 #
 # Sandbox (nothing here touches the user's MakePack, settings, registry or files):
@@ -14,7 +14,9 @@
 param(
     [string]$Exe = "$PSScriptRoot\..\zig-out\bin\MakePack.exe",
     [string]$Only = "",
-    [ValidateRange(1, 9)][int]$Screen = 1
+    [ValidateRange(1, 9)][int]$Screen = 1,
+    # UI language of every started process (MAKEKIT_LANG beats the saved setting and Windows' language).
+    [ValidateSet('uk', 'en')][string]$Lang = 'uk'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +48,7 @@ $env:MAKEPACK_SETTINGS  = Join-Path $Root 'settings.json'
 $env:MAKEPACK_REGROOT   = $RegRoot
 $env:MAKEKIT_AUTOMATION = '1'
 $env:MAKEKIT_DISPLAY    = '\\.\DISPLAY' + $Screen
+$env:MAKEKIT_LANG       = $Lang
 foreach ($v in 'MAKEPACK_HIVE', 'MAKEPACK_PASSWORD', 'MAKEPACK_INSTANCE') { Remove-Item ('Env:\' + $v) -ErrorAction SilentlyContinue }
 $script:nPass = 0; $script:nFail = 0; $script:nSkip = 0
 $script:Procs = New-Object System.Collections.ArrayList
@@ -339,20 +342,27 @@ function Test-Case([string]$Name, [scriptblock]$Body) {
 }
 
 # ---------- the app's own wording ----------
-# Read straight out of src\strings.zig so this file can stay ASCII. Returns @(uk, en): which of the two is on
-# screen depends on the UI language of the machine running the test, so assertions accept either.
-# Names are Strings.cs's (S.NotAnArchive), strings.zig's are camelCase (notAnArchive).
+# Read straight out of src\i18n\uk.zig and en.zig so this file can stay ASCII. Returns @(uk, en); -Lang picks
+# which one is on screen (MAKEKIT_LANG), assertions accept either.
+# Names are Strings.cs's (S.NotAnArchive), the i18n keys are camelCase (notAnArchive).
 $script:StringsSrc = $null
 function S-Text([string]$Name) {
     if ($null -eq $script:StringsSrc) {
-        $f = Join-Path $PSScriptRoot '..\src\strings.zig'
-        if (-not (Test-Path -LiteralPath $f)) { Skip-Test ("strings.zig not found next to the script: " + $f) }
-        $script:StringsSrc = [System.IO.File]::ReadAllText($f, [System.Text.Encoding]::UTF8)
+        $script:StringsSrc = @{}
+        foreach ($l in 'uk', 'en') {
+            $f = Join-Path $PSScriptRoot ('..\src\i18n\' + $l + '.zig')
+            if (-not (Test-Path -LiteralPath $f)) { Skip-Test ("strings not found next to the script: " + $f) }
+            $script:StringsSrc[$l] = [System.IO.File]::ReadAllText($f, [System.Text.Encoding]::UTF8)
+        }
     }
     $zig = $Name.Substring(0, 1).ToLowerInvariant() + $Name.Substring(1)
-    $m = [regex]::Match($script:StringsSrc, ('pub const ' + $zig + '\s*=\s*L\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*\)'))
-    if (-not $m.Success) { Skip-Test ("strings.zig has no '" + $zig + "' string") }
-    ,@($m.Groups[1].Value, $m.Groups[2].Value)
+    $out = @()
+    foreach ($l in 'uk', 'en') {
+        $m = [regex]::Match($script:StringsSrc[$l], ('(?m)^\s*\.' + [regex]::Escape($zig) + '\s*=\s*"((?:[^"\\]|\\.)*)"'))
+        if (-not $m.Success) { Skip-Test ("src\i18n\" + $l + ".zig has no '" + $zig + "' string") }
+        $out += $m.Groups[1].Value
+    }
+    ,@($out[0], $out[1])
 }
 
 # The library's own wording - A3 says the user must never see it.
@@ -2064,6 +2074,37 @@ Test-Case 'assoc_fits_window' {
     Assert ($ok.visible -and $cancel.visible -and $ok.y1 -le $main.y1) ("the footer is off screen: OK y1=" + $ok.y1 + " visible=" + $ok.visible + ", window y1=" + $main.y1)
     Click $app '##assoc_cancel'
     Assert ((Wait-Item $app '###mcommands' 5) -ne $null) "the main window did not come back after Cancel"
+}
+
+# ---------- 32 ----------
+# Settings > Language: the pick applies on the next frame (no restart; Cancel does not undo it), is saved to
+# settings.json and mirrored to Software\MakePack Language for the Explorer menu DLL. MAKEKIT_LANG would beat the
+# pick, so this case lifts it.
+Test-Case 'language_switch' {
+    $d = New-TestDir 'lang'
+    $forced = $env:MAKEKIT_LANG
+    Remove-Item Env:\MAKEKIT_LANG -ErrorAction SilentlyContinue
+    try {
+        $app = Must-Connect (Start-App @((Q $d)))
+        $null = Must-Item $app '###mfile' 15
+        $file = S-Text 'MFile'   # @(uk, en)
+        foreach ($c in @(@('en', '&File'), @('uk', $file[0]), @('auto', $null))) {
+            Click $app '###moptions'; Click $app '###m_settings'
+            $null = Must-Item $app '##settings_lang' 10
+            Click $app '##settings_lang'; Click $app ('##lang_' + $c[0])
+            Click $app '##settings_cancel'
+            $saved = if ($c[0] -eq 'auto') { 'Auto' } else { $c[0] }
+            $js = Get-Content -LiteralPath $env:MAKEPACK_SETTINGS -Raw | ConvertFrom-Json
+            Assert ($js.Language -eq $saved) ("settings.json Language = " + $js.Language + ", want " + $saved)
+            $reg = (Get-ItemProperty -LiteralPath ($RegHK + '\Software\MakePack') -Name Language -ErrorAction SilentlyContinue).Language
+            Assert ($reg -eq $saved) ("registry Language = " + $reg + ", want " + $saved)
+            if ($c[1]) {
+                $want = $c[1].Replace('&', '')
+                $got = Text-Of (Must-Item $app '###mfile').label
+                Assert ($got -eq $want) ("after picking " + $c[0] + " the File menu reads '" + $got + "', not '" + $want + "'")
+            }
+        }
+    } finally { $env:MAKEKIT_LANG = $forced }
 }
 
 # ---------- summary ----------

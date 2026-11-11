@@ -479,7 +479,7 @@ pub const Dialogs = struct {
             } else {
                 // Program.NoSuchProfile
                 var buf: [512]u8 = undefined;
-                d.alert(.err, S.app, S.fillZ(&buf, S.profileNotFoundFmt.get(), .{b.key}));
+                d.alert(.err, S.app, S.fillZ(&buf, S.tr().profileNotFoundFmt, .{b.key}));
                 d.ctx.exit_code = 1;
             }
         }
@@ -761,7 +761,68 @@ pub fn danger(text: []const u8, id: []const u8) bool {
 }
 
 fn buttonWidth(l: [:0]const u8) f32 {
-    return @max(88 * scale(), im.ImGui_CalcTextSizeEx(l.ptr, null, true, -1).x + im.ImGui_GetStyle().*.FramePadding.x * 2);
+    return buttonWidthMin(l, 88);
+}
+
+/// At least `min` (unscaled) px, wider when the translated text needs it.
+fn buttonWidthMin(l: [:0]const u8, min: f32) f32 {
+    return @max(min * scale(), im.ImGui_CalcTextSizeEx(l.ptr, null, true, -1).x + im.ImGui_GetStyle().*.FramePadding.x * 2);
+}
+
+/// `button` at least `min` (unscaled) px wide: Browse… next to a box, the side buttons of a list.
+pub fn buttonMin(text: []const u8, id: []const u8, min: f32) bool {
+    var b: [512]u8 = undefined;
+    const l = lbl(&b, text, id);
+    return im.ImGui_ButtonEx(l.ptr, .{ .x = buttonWidthMin(l, min), .y = 0 });
+}
+
+// ---- layout that survives translation: a column moves right / wraps instead of overlapping -----------------
+
+/// Width of `t` in the current font, unscaled px.
+pub fn textWidth(t: []const u8) f32 {
+    return im.ImGui_CalcTextSizeEx(t.ptr, t.ptr + t.len, false, -1).x / scale();
+}
+
+/// A caption column (unscaled px, measured like SameLineEx: from the window's left edge, padding included) that
+/// fits the longest of `texts`: at least `min`.
+pub fn capWidth(min: f32, texts: []const []const u8) f32 {
+    const st = im.ImGui_GetStyle();
+    const air = (st.*.WindowPadding.x + st.*.ItemSpacing.x) / scale();
+    var r = min;
+    for (texts) |t| r = @max(r, textWidth(t) + air);
+    return r;
+}
+
+/// A `combo` width (unscaled px) that shows the longest of `items` whole: at least `min`.
+pub fn comboWidth(min: f32, items: []const []const u8) f32 {
+    const extra = (im.ImGui_GetStyle().*.FramePadding.x * 2 + kit.ui.dropArrowWidth()) / scale();
+    var r = min;
+    for (items) |t| r = @max(r, textWidth(t) + extra);
+    return r;
+}
+
+/// `checkbox`'s width (box + gap + text), unscaled px.
+pub fn checkboxWidth(text: []const u8) f32 {
+    return (im.ImGui_GetFrameHeight() + im.ImGui_GetStyle().*.ItemInnerSpacing.x) / scale() + textWidth(text);
+}
+
+/// SameLineEx(col): the next item at column `col` (unscaled, from the window's left), or right after the last
+/// item when a longer translation already reaches past the column.
+pub fn sameLineAt(col: f32) void {
+    const end = im.ImGui_GetItemRectMax().x + im.ImGui_GetStyle().*.ItemSpacing.x;
+    im.ImGui_SameLineEx(col * scale(), -1);
+    const p = im.ImGui_GetCursorScreenPos();
+    if (p.x < end) im.ImGui_SetCursorScreenPos(.{ .x = end, .y = p.y });
+}
+
+/// `sameLineAt(col)` for an item `width` px wide (unscaled) when it still fits in the window; else the item
+/// starts a new line `indent` px in (a row of check boxes that a long translation would push off the edge).
+pub fn flowAt(col: f32, width: f32, indent: f32) void {
+    const right = im.ImGui_GetCursorScreenPos().x + im.ImGui_GetContentRegionAvail().x; // from the line start
+    sameLineAt(col);
+    if (im.ImGui_GetCursorScreenPos().x + width * scale() <= right) return;
+    im.ImGui_NewLine();
+    im.ImGui_SetCursorPosX(im.ImGui_GetCursorPosX() + indent * scale());
 }
 
 pub fn buttonOn(enabled: bool, text: []const u8, id: []const u8) bool {
@@ -856,11 +917,12 @@ pub fn tooltip(t: []const u8) void {
     }
 }
 
-/// Caption at the left of a row of controls (WinForms' Label), vertically aligned with them.
+/// Caption at the left of a row of controls (WinForms' Label), vertically aligned with them; the controls start
+/// at `width` (unscaled), or after the text when a translation is longer.
 pub fn caption(t: []const u8, width: f32) void {
     im.ImGui_AlignTextToFramePadding();
     im.ImGui_TextUnformattedEx(t.ptr, t.ptr + t.len);
-    if (width > 0) im.ImGui_SameLineEx(width * scale(), -1);
+    if (width > 0) sameLineAt(width);
 }
 
 /// Esc / Enter for the window being drawn (only while it, or a child, has the focus).

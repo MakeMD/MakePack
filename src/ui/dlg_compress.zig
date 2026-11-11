@@ -75,14 +75,14 @@ pub fn overwriteQuestion(gpa: Allocator, archives: []const []const u8, volume: i
         if (engine.fileExists(p)) existing.append(gpa, p) catch {};
     }
     if (existing.items.len == 0) return null;
-    if (existing.items.len == 1) return S.fill(gpa, S.overwriteArchiveFmt.get(), .{fspath.basename(existing.items[0])}) catch null;
+    if (existing.items.len == 1) return S.fill(gpa, S.tr().overwriteArchiveFmt, .{fspath.basename(existing.items[0])}) catch null;
     var names: std.ArrayList(u8) = .empty;
     defer names.deinit(gpa);
     for (existing.items[0..@min(5, existing.items.len)], 0..) |p, i| {
         if (i > 0) names.append(gpa, '\n') catch {};
         names.appendSlice(gpa, fspath.basename(p)) catch {};
     }
-    return S.fill(gpa, S.overwriteManyFmt.get(), .{ existing.items.len, names.items }) catch null;
+    return S.fill(gpa, S.tr().overwriteManyFmt, .{ existing.items.len, names.items }) catch null;
 }
 
 pub const Compress = struct {
@@ -141,7 +141,7 @@ pub const Compress = struct {
     done: bool = false,
 
     pub fn title(_: *Compress, _: []u8) []const u8 {
-        return D.noDots(S.newArchive.get());
+        return D.noDots(S.tr().newArchive);
     }
 
     fn currentKind(f: *const Compress) Kind {
@@ -290,8 +290,8 @@ pub const Compress = struct {
         const a = f.strs.allocator();
         const profiles = settings.current().Profiles;
         const names = a.alloc([]const u8, profiles.len + 1) catch return;
-        names[0] = S.noProfile.get();
-        for (profiles, 0..) |p, i| names[i + 1] = if (p.IsDefault) (std.mem.concat(a, u8, &.{ p.Name, S.defaultMark.get() }) catch p.Name) else p.Name;
+        names[0] = S.tr().noProfile;
+        for (profiles, 0..) |p, i| names[i + 1] = if (p.IsDefault) (std.mem.concat(a, u8, &.{ p.Name, S.tr().defaultMark }) catch p.Name) else p.Name;
         f.profile_names = names;
         f.profile = 0;
         if (select) |s| for (profiles, 0..) |p, i| if (std.mem.eql(u8, p.Name, s)) {
@@ -353,7 +353,7 @@ pub const Compress = struct {
         if (f.volumeSize() == null) return; // a bad volume size is flagged already; do not store it
         const cur: ?settings.Profile = if (f.profile > 0 and f.profile <= settings.current().Profiles.len) settings.current().Profiles[f.profile - 1] else null;
         f.state = .save_name;
-        P.askName(d, S.saveProfileTitle.get(), null, .profile_full, if (cur) |c| c.Name else "", if (cur) |c| c.IsDefault else false, if (cur) |c| c.InMenu else false, &f.reply);
+        P.askName(d, S.tr().saveProfileTitle, null, .profile_full, if (cur) |c| c.Name else "", if (cur) |c| c.IsDefault else false, if (cur) |c| c.InMenu else false, &f.reply);
     }
 
     fn saveProfileCommit(f: *Compress, d: *Dialogs) void {
@@ -379,11 +379,11 @@ pub const Compress = struct {
     }
 
     fn doCreate(f: *Compress, d: *Dialogs) void {
-        if (f.inputs.items.len == 0) return P.message(d, .info, S.app, S.noInputs.get(), .ok, false, null);
+        if (f.inputs.items.len == 0) return P.message(d, .info, S.app, S.tr().noInputs, .ok, false, null);
         const volume = f.volumeSize() orelse return; // the error text already says why
         const pw = D.bufText(&f.password);
         if (f.passwordOn() and pw.len > 0 and f.confirmOn() and !std.mem.eql(u8, D.bufText(&f.confirm_box), pw))
-            return P.message(d, .warning, S.app, S.passwordsDiffer.get(), .ok, false, null);
+            return P.message(d, .warning, S.app, S.tr().passwordsDiffer, .ok, false, null);
 
         _ = f.job_arena.reset(.free_all);
         const a = f.job_arena.allocator();
@@ -393,7 +393,7 @@ pub const Compress = struct {
         f.job_kind = f.currentKind();
         f.job_out = a.dupe(u8, std.mem.trim(u8, D.bufText(&f.out), " \t")) catch return;
         f.job_plan = if (f.separate) (engine.planSeparate(a, d.ctx.io, inputs, f.ext(), settings.current().ArchiveFolder) catch return) else null;
-        if (f.job_plan == null and f.job_out.len == 0) return P.message(d, .info, S.app, S.outputFile.get(), .ok, false, null);
+        if (f.job_plan == null and f.job_out.len == 0) return P.message(d, .info, S.app, S.tr().outputFile, .ok, false, null);
         f.job_opts = .{
             .level = level_map[f.level],
             .password = if (f.passwordOn() and pw.len > 0) (a.dupe(u8, pw) catch return) else null,
@@ -423,7 +423,7 @@ pub const Compress = struct {
 
     fn startRun(f: *Compress, d: *Dialogs) void {
         f.state = .running;
-        f.run.start(d, S.compressing.get(), f, work, true);
+        f.run.start(d, S.tr().compressing, f, work, true);
     }
 
     fn work(r: *R.Run) anyerror!void {
@@ -481,7 +481,7 @@ pub const Compress = struct {
                     if (settings.current().findProfile(f.save_name)) |taken| {
                         var buf: [600]u8 = undefined;
                         f.state = .save_replace;
-                        P.message(d, .question, S.app, S.fillZ(&buf, S.profileExistsFmt.get(), .{taken.Name}), .yes_no, false, &f.reply);
+                        P.message(d, .question, S.app, S.fillZ(&buf, S.tr().profileExistsFmt, .{taken.Name}), .yes_no, false, &f.reply);
                     } else f.saveProfileCommit(d);
                 } else f.reply.reset(f.gpa);
             },
@@ -499,20 +499,23 @@ pub const Compress = struct {
 
     fn drawControls(f: *Compress, d: *Dialogs) void {
         const s = D.scale();
-        const left: f32 = 430;
-        const right: f32 = 98;
         const st = settings.current();
+        // The caption column fits the language's longest caption; everything right of it moves with it.
+        const cap = D.capWidth(74, &.{ S.tr().profile, S.tr().format, S.tr().passwordCaption, S.tr().confirm, S.tr().volumes, S.tr().method, S.tr().solidBlock, S.tr().exeFilter });
+        const left: f32 = 356 + cap;
+        const right: f32 = 98;
+        const cap2 = cap + 128 + D.capWidth(64, &.{S.tr().level}); // the level combo, right of the format
 
         // Compression profiles: picking one fills every option below.
-        D.caption(S.profile.get(), 74);
-        if (D.combo("compress_profile", f.profile_names, &f.profile, left - 74)) {
+        D.caption(S.tr().profile, cap);
+        if (D.combo("compress_profile", f.profile_names, &f.profile, left - cap)) {
             if (f.profile > 0 and f.profile <= st.Profiles.len) f.applyProfile(d, st.Profiles[f.profile - 1]);
         }
         im.ImGui_SameLine();
-        if (D.button(S.saveProfile.get(), "compress_save_profile")) f.saveProfileStart(d);
+        if (D.button(S.tr().saveProfile, "compress_save_profile")) f.saveProfileStart(d);
 
         im.ImGui_Dummy(.{ .x = 0, .y = 2 * s }); // air between the profile row and the list's caption
-        im.ImGui_TextUnformatted(S.inputs.get());
+        im.ImGui_TextUnformatted(S.tr().inputs);
         const list_top = im.ImGui_GetCursorPosY();
         if (im.ImGui_BeginListBox("##compress_inputs", .{ .x = left * s, .y = 116 * s })) {
             const ctrl = im.ImGui_GetIO().*.KeyCtrl;
@@ -529,21 +532,21 @@ pub const Compress = struct {
         const after_list = im.ImGui_GetCursorPosY();
         const bx = im.ImGui_GetCursorPosX() + (left + 8) * s;
         im.ImGui_SetCursorPos(.{ .x = bx, .y = list_top });
-        if (f.sideButton(S.addFiles.get(), "compress_add_files", right)) {
-            if (kit.win.openFiles(f.gpa, D.owner(d), true, .{ .title = S.addFiles.get(), .filters = &.{.{ .name = S.allFiles.get(), .spec = "*.*" }} }) catch null) |files| {
+        if (f.sideButton(S.tr().addFiles, "compress_add_files", right)) {
+            if (kit.win.openFiles(f.gpa, D.owner(d), true, .{ .title = S.tr().addFiles, .filters = &.{.{ .name = S.tr().allFiles, .spec = "*.*" }} }) catch null) |files| {
                 defer kit.win.freeList(f.gpa, files);
                 f.addInputs(d, @ptrCast(files));
             }
         }
         im.ImGui_SetCursorPosX(bx);
-        if (f.sideButton(S.addFolder.get(), "compress_add_folder", right)) {
-            if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .title = S.pickFolder.get() }) catch null) |dir| {
+        if (f.sideButton(S.tr().addFolder, "compress_add_folder", right)) {
+            if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .title = S.tr().pickFolder }) catch null) |dir| {
                 defer f.gpa.free(dir);
                 f.addInputs(d, &.{dir});
             }
         }
         im.ImGui_SetCursorPosX(bx);
-        if (f.sideButton(S.remove.get(), "compress_remove", right)) {
+        if (f.sideButton(S.tr().remove, "compress_remove", right)) {
             var i = f.inputs.items.len;
             while (i > 0) {
                 i -= 1;
@@ -555,63 +558,61 @@ pub const Compress = struct {
         }
         im.ImGui_SetCursorPosY(after_list + 6 * s);
 
-        im.ImGui_TextUnformatted(S.outputFile.get());
-        im.ImGui_SameLineEx((left - 160) * s, -1);
+        im.ImGui_TextUnformatted(S.tr().outputFile);
+        D.sameLineAt(left - 160);
         // Each input gets its own archive next to it: the single Archive path above no longer applies.
-        _ = D.checkbox(S.separateArchives.get(), "compress_separate", &f.separate);
+        _ = D.checkbox(S.tr().separateArchives, "compress_separate", &f.separate);
         im.ImGui_BeginDisabled(f.separate);
         if (D.input("compress_out", &f.out, left, 0)) f.auto_out = false;
         im.ImGui_SameLine();
-        if (f.sideButton(S.browse.get(), "compress_browse", right)) f.browseOut(d);
+        if (f.sideButton(S.tr().browse, "compress_browse", right)) f.browseOut(d);
         im.ImGui_EndDisabled();
 
         // format, level, SFX
-        D.caption(S.format.get(), 74);
+        D.caption(S.tr().format, cap);
         var knames: [engine.kinds.len][]const u8 = undefined;
         for (f.kinds[0..f.kinds_n], 0..) |k, i| knames[i] = k.name;
         if (D.combo("compress_format", knames[0..f.kinds_n], &f.format, 110)) f.formatChanged(d);
-        im.ImGui_SameLineEx((74 + 128) * s, -1);
-        D.caption(S.level.get(), 0);
-        im.ImGui_SameLineEx((74 + 128 + 64) * s, -1);
+        D.sameLineAt(cap + 128);
+        D.caption(S.tr().level, cap2);
         const levels = S.levels();
         var lnames: [6][]const u8 = undefined;
         for (levels, 0..) |l, i| lnames[i] = l;
-        _ = D.combo("compress_level", &lnames, &f.level, 160);
-        im.ImGui_SameLineEx((left + 8) * s, -1);
+        _ = D.combo("compress_level", &lnames, &f.level, D.comboWidth(160, &lnames));
+        D.sameLineAt(left + 8);
         im.ImGui_BeginDisabled(f.currentKind() != .SevenZip);
         const sfx_before = f.sfx;
         _ = D.checkbox("SFX (.exe)", "compress_sfx", &f.sfx);
-        D.tooltip(S.sfxTip.get());
+        D.tooltip(S.tr().sfxTip);
         im.ImGui_EndDisabled();
         if (sfx_before != f.sfx) f.updateOut(d);
 
         // password
-        var pl: [64]u8 = undefined;
-        D.caption(std.mem.print(&pl, "{s}:", .{S.password.get()}) catch "", 74);
+        D.caption(S.tr().passwordCaption, cap);
         im.ImGui_BeginDisabled(!f.passwordOn());
         _ = D.input("compress_password", &f.password, 180, if (f.show_password) 0 else im.ImGuiInputTextFlags_Password);
         im.ImGui_EndDisabled();
-        im.ImGui_SameLineEx((74 + 192) * s, -1);
+        D.sameLineAt(cap + 192);
         if (f.currentKind() == .Zip) {
-            _ = D.checkbox(S.zipCrypto.get(), "compress_zipcrypto", &f.zip_crypto);
-            D.tooltip(S.zipCryptoTip.get());
+            _ = D.checkbox(S.tr().zipCrypto, "compress_zipcrypto", &f.zip_crypto);
+            D.tooltip(S.tr().zipCryptoTip);
         } else {
             im.ImGui_BeginDisabled(f.currentKind() != .SevenZip);
-            _ = D.checkbox(S.encryptNames.get(), "compress_encrypt_names", &f.encrypt_names);
+            _ = D.checkbox(S.tr().encryptNames, "compress_encrypt_names", &f.encrypt_names);
             im.ImGui_EndDisabled();
         }
         // Typed twice while it is hidden: a typo in a hidden password locks the archive for good.
-        D.caption(S.confirm.get(), 74);
+        D.caption(S.tr().confirm, cap);
         im.ImGui_BeginDisabled(!f.confirmOn());
         _ = D.input("compress_confirm", &f.confirm_box, 180, im.ImGuiInputTextFlags_Password);
         im.ImGui_EndDisabled();
-        im.ImGui_SameLineEx((74 + 192) * s, -1);
+        D.sameLineAt(cap + 192);
         im.ImGui_BeginDisabled(!f.passwordOn());
-        _ = D.checkbox(S.showPassword.get(), "compress_show_password", &f.show_password);
+        _ = D.checkbox(S.tr().showPassword, "compress_show_password", &f.show_password);
         im.ImGui_EndDisabled();
 
         // volumes: an editable drop-down
-        D.caption(S.volumes.get(), 74);
+        D.caption(S.tr().volumes, cap);
         im.ImGui_BeginDisabled(!f.volumesOn());
         _ = D.input("compress_volumes", &f.volumes, 180 - kit.ui.dropArrowWidth() / s, 0);
         im.ImGui_SameLineEx(0, 0);
@@ -619,74 +620,71 @@ pub const Compress = struct {
         D.dropDownArrow("compress_volume_presets", &volume_presets, &picked);
         if (picked) |i| D.setText(&f.volumes, volume_presets[i]);
         im.ImGui_EndDisabled();
-        im.ImGui_SameLineEx((74 + 192) * s, -1);
+        D.sameLineAt(cap + 192);
         im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Text, im.ImGui_GetStyle().*.Colors[im.ImGuiCol_TextDisabled]);
-        im.ImGui_TextUnformatted(S.volumesHint.get());
+        im.ImGui_TextUnformatted(S.tr().volumesHint);
         im.ImGui_PopStyleColor();
         if (f.volumeSize() == null) {
             im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Text, kit.app.color(d.ctx.app.cfg.palette.danger, 1));
-            kit.ui.text("compress_volume_error", S.badVolumeSize.get(), null, (left + right) * s);
+            kit.ui.text("compress_volume_error", S.tr().badVolumeSize, null, (left + right) * s);
             im.ImGui_PopStyleColor();
         }
 
-        _ = D.checkbox(S.testAfter.get(), "compress_test_after", &f.test_after);
-        im.ImGui_SameLineEx((74 + 192) * s, -1);
+        _ = D.checkbox(S.tr().testAfter, "compress_test_after", &f.test_after);
+        D.sameLineAt(cap + 192);
         // Not remembered on purpose: a forgotten tick here costs the user their files.
-        _ = D.checkbox(S.deleteSources.get(), "compress_delete_sources", &f.delete_sources);
+        _ = D.checkbox(S.tr().deleteSources, "compress_delete_sources", &f.delete_sources);
 
         // Advanced block (7-Zip's right-hand column), folded away by default.
         const g = kit.ui.glyph(if (st.ShowAdvanced) 0xE70E else 0xE70D);
         var ab: [128]u8 = undefined;
-        const adv_label = std.mem.printSentinel(&ab, "{s}  {s}##compress_advanced", .{ S.advancedOptions.get(), std.mem.sliceTo(&g, 0) }, 0) catch "##compress_advanced";
+        const adv_label = std.mem.printSentinel(&ab, "{s}  {s}##compress_advanced", .{ S.tr().advancedOptions, std.mem.sliceTo(&g, 0) }, 0) catch "##compress_advanced";
         if (im.ImGui_SmallButton(adv_label.ptr)) {
             st.ShowAdvanced = !st.ShowAdvanced;
             settings.commit();
         }
-        if (st.ShowAdvanced) f.drawAdvanced();
+        if (st.ShowAdvanced) f.drawAdvanced(cap);
 
         im.ImGui_Dummy(.{ .x = 0, .y = 4 * s });
-        D.alignRight(&.{ S.create.get(), S.cancel.get() });
+        D.alignRight(&.{ S.tr().create, S.tr().cancel });
         const busy = f.state != .idle;
-        if (D.primary(f.volumeSize() != null and !busy, S.create.get(), "compress_create")) f.doCreate(d);
+        if (D.primary(f.volumeSize() != null and !busy, S.tr().create, "compress_create")) f.doCreate(d);
         im.ImGui_SameLine();
-        if (D.button(S.cancel.get(), "compress_cancel")) f.done = true;
+        if (D.button(S.tr().cancel, "compress_cancel")) f.done = true;
         if (!busy and D.escPressed()) f.done = true;
         if (!busy and D.enterPressed() and f.volumeSize() != null and !im.ImGui_IsAnyItemActive()) f.doCreate(d);
     }
 
-    fn drawAdvanced(f: *Compress) void {
-        const s = D.scale();
+    fn drawAdvanced(f: *Compress, cap: f32) void {
+        const cap2 = cap + 128 + D.capWidth(74, &.{ S.tr().dictionary, S.tr().threads });
         im.ImGui_BeginDisabled(!f.advOn());
-        D.caption(S.method.get(), 74);
+        D.caption(S.tr().method, cap);
         if (D.combo("compress_method", f.method_names[0..f.methods.len], &f.method, 110)) f.refreshAdvanced();
         im.ImGui_EndDisabled();
-        im.ImGui_SameLineEx((74 + 128) * s, -1);
+        D.sameLineAt(cap + 128);
         im.ImGui_BeginDisabled(!f.dictOn());
-        D.caption(S.dictionary.get(), 0);
-        im.ImGui_SameLineEx((74 + 128 + 74) * s, -1);
+        D.caption(S.tr().dictionary, cap2);
         _ = D.combo("compress_dictionary", &f.dict_names, &f.dict, 150);
         im.ImGui_EndDisabled();
 
         im.ImGui_BeginDisabled(!f.solidOn());
-        D.caption(S.solidBlock.get(), 74);
+        D.caption(S.tr().solidBlock, cap);
         _ = D.combo("compress_solid", &f.solid_names, &f.solid, 110);
         im.ImGui_EndDisabled();
-        im.ImGui_SameLineEx((74 + 128) * s, -1);
+        D.sameLineAt(cap + 128);
         im.ImGui_BeginDisabled(!f.advOn());
-        D.caption(S.threads.get(), 0);
-        im.ImGui_SameLineEx((74 + 128 + 74) * s, -1);
+        D.caption(S.tr().threads, cap2);
         _ = D.combo("compress_threads", f.thread_names, &f.threads, 150);
         im.ImGui_EndDisabled();
 
         im.ImGui_BeginDisabled(!f.solidOn());
-        D.caption(S.exeFilter.get(), 74);
+        D.caption(S.tr().exeFilter, cap);
         _ = D.combo("compress_filter", &f.filter_names, &f.filter, 110);
         im.ImGui_EndDisabled();
     }
 
     fn sideButton(_: *Compress, text: []const u8, id: []const u8, width: f32) bool {
-        var b: [256]u8 = undefined;
-        return im.ImGui_ButtonEx(D.lbl(&b, text, id).ptr, .{ .x = width * D.scale(), .y = 0 });
+        return D.buttonMin(text, id, width);
     }
 
     fn browseOut(f: *Compress, d: *Dialogs) void {
@@ -698,7 +696,7 @@ pub const Compress = struct {
         const got = (kit.win.saveFile(f.gpa, D.owner(d), .{
             .file_name = fspath.basename(cur),
             .folder = fspath.dirname(cur),
-            .filters = &.{ .{ .name = name, .spec = spec }, .{ .name = S.allFiles.get(), .spec = "*.*" } },
+            .filters = &.{ .{ .name = name, .spec = spec }, .{ .name = S.tr().allFiles, .spec = "*.*" } },
         }) catch null) orelse return;
         defer f.gpa.free(got);
         D.setText(&f.out, got);
@@ -736,20 +734,20 @@ pub fn open(d: *Dialogs, inputs: []const []const u8, open_created: bool, modal: 
     f.test_after = st.TestAfter;
     for (dictionaries, 0..) |v, i| {
         var nb: [32]u8 = undefined;
-        f.dict_names[i] = if (v == 0) S.auto.get() else (a.dupe(u8, engine.niceSize(&nb, v)) catch "?");
+        f.dict_names[i] = if (v == 0) S.tr().auto else (a.dupe(u8, engine.niceSize(&nb, v)) catch "?");
     }
     f.dict = std.mem.findScalar(i64, &dictionaries, st.Dictionary) orelse 0;
-    for (solids, 0..) |v, i| f.solid_names[i] = if (v) |x| (if (std.mem.eql(u8, x, "off")) S.off.get() else (std.ascii.allocUpperString(a, x) catch x)) else S.auto.get();
+    for (solids, 0..) |v, i| f.solid_names[i] = if (v) |x| (if (std.mem.eql(u8, x, "off")) S.tr().off else (std.ascii.allocUpperString(a, x) catch x)) else S.tr().auto;
     for (solids, 0..) |v, i| {
         if (v != null and !std.mem.eql(u8, v.?, "off")) f.solid_names[i] = std.mem.concat(a, u8, &.{ f.solid_names[i], "B" }) catch f.solid_names[i];
         if (eqlOpt(v, st.Solid)) f.solid = i;
     }
     f.threads_n = cpuCount() + 1;
     f.thread_names = a.alloc([]const u8, f.threads_n) catch &.{};
-    for (f.thread_names, 0..) |*t, i| t.* = if (i == 0) S.auto.get() else (a.print("{d}", .{i}) catch "?");
+    for (f.thread_names, 0..) |*t, i| t.* = if (i == 0) S.tr().auto else (a.print("{d}", .{i}) catch "?");
     if (st.Threads > 0 and @as(usize, @intCast(st.Threads)) < f.thread_names.len) f.threads = @intCast(st.Threads);
     for (filters, 0..) |v, i| {
-        f.filter_names[i] = v.text orelse (if (v.value == null) S.auto.get() else S.off.get());
+        f.filter_names[i] = v.text orelse (if (v.value == null) S.tr().auto else S.tr().off);
         if (eqlOpt(v.value, st.Filter)) f.filter = i;
     }
     f.addInputs(d, inputs); // also fills the format list - with the inputs known, so a remembered gz/xz can stick
@@ -794,7 +792,7 @@ const ProfileRun = struct {
                     return false;
                 }
                 t.state = .run;
-                t.run.start(d, S.compressing.get(), t, work, false);
+                t.run.start(d, S.tr().compressing, t, work, false);
                 return true;
             },
             .run => {
@@ -834,6 +832,6 @@ pub fn runProfile(d: *Dialogs, p: settings.Profile, paths: []const []const u8) v
         defer gpa.free(q);
         t.state = .confirm;
         P.message(d, .warning, S.app, q, .yes_no, false, &t.reply);
-    } else t.run.start(d, S.compressing.get(), t, ProfileRun.work, false);
+    } else t.run.start(d, S.tr().compressing, t, ProfileRun.work, false);
     D.addTask(d, ProfileRun, t, false);
 }

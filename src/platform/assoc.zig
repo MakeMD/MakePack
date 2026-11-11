@@ -212,6 +212,18 @@ fn setQuickKindC(c: Ctx, k: types.ArchiveKind) !void {
     try c.set(root, "QuickExt", types.kind(k).ext);
 }
 
+/// Software\MakePack Language = settings' "Language" ("Auto", "pl"...): the Windows 11 menu DLL draws its items in
+/// it. When this exe owns the registration, the classic verbs (captions written in the language of the moment) are
+/// rewritten in the current one too; another copy's registration (installed vs dev build) is left alone.
+pub fn setLanguage(h: Hive, code: []const u8, profiles: []const settings.Profile) !void {
+    var s = Scratch.init();
+    defer s.deinit();
+    const c = s.ctx(h);
+    try c.set(root, "Language", code);
+    const exe = exeOf(c.a, c.read(classes ++ prog_id ++ "\\shell\\open\\command", null) orelse return);
+    if (std.ascii.eqlIgnoreCase(exe, try pw.exePath(c.a))) try applyMenuC(c, profiles);
+}
+
 /// Assoc.ApplyMenu: every menu entry in line with menu(): the archive verbs of the types MakePack is
 /// registered for, the ProgID's own verbs, the file/folder items. Call after changing Menu or QuickKind.
 /// `profiles` = settings.current().Profiles (C# read Settings.Current itself).
@@ -235,8 +247,8 @@ fn applyMenuC(c: Ctx, profiles: []const settings.Profile) !void {
         if (c.read(try c.cat(&.{ classes, ".", ext, "\\OpenWithProgids" }), prog_id) != null) try extVerbs(c, ext, m);
     }
     if (c.exists(classes ++ prog_id)) try progIdVerbs(c, m);
-    for (add_keys) |k| try c.toggle(k, m.add, S.verbAddTo.get(), " a \"%1\"");
-    const quick_caption = try S.fill(c.a, S.verbQuickAddFmt.get(), .{types.kind(quick).ext});
+    for (add_keys) |k| try c.toggle(k, m.add, S.tr().verbAddTo, " a \"%1\"");
+    const quick_caption = try S.fill(c.a, S.tr().verbQuickAddFmt, .{types.kind(quick).ext});
     for (quick_keys) |k| try c.toggle(k, m.quick_add, quick_caption, " a --quick \"%1\"");
     for (add_keys ++ quick_keys) |k| {
         if (c.exists(k)) try c.set(k, "MultiSelectModel", "Player"); // one call per item: MakePack merges them
@@ -264,8 +276,8 @@ fn applyProfilesC(c: Ctx, profiles: []const settings.Profile) !void {
         if (!p.InMenu or std.mem.findScalar(u8, p.Name, '"') != null) continue; // a quote would end the name in the command line
         n += 1;
         const id = try c.a.print("{d:0>2}", .{n}); // zero-padded: the DLL lists the subkeys in name order
-        const template = if (p.Separate) S.verbProfileSeparateFmt else S.verbProfileFmt;
-        const caption = try S.fill(c.a, template.get(), .{ p.ext(), p.Name });
+        const template = if (p.Separate) S.tr().verbProfileSeparateFmt else S.tr().verbProfileFmt;
+        const caption = try S.fill(c.a, template, .{ p.ext(), p.Name });
         const args = try c.a.print(" a --profile \"{s}\" \"%1\"", .{p.Name});
         for ([_][]const u8{ classes ++ "*\\shell\\MakePack.P", classes ++ "Directory\\shell\\MakePack.P" }) |parent| {
             const key = try c.cat(&.{ parent, id });
@@ -296,15 +308,15 @@ fn clearProfiles(c: Ctx) !void {
 
 fn extVerbs(c: Ctx, ext: []const u8, m: MenuItems) !void {
     const shell = try c.cat(&.{ classes, "SystemFileAssociations\\.", ext, "\\shell\\MakePack." });
-    try c.toggle(try c.cat(&.{ shell, "Open" }), m.open, S.verbOpenWith.get(), " \"%1\"");
-    try c.toggle(try c.cat(&.{ shell, "ExtractHere" }), m.extract_here, S.verbExtractHere.get(), " x \"%1\" --here");
-    try c.toggle(try c.cat(&.{ shell, "ExtractTo" }), m.extract_to, S.verbExtractTo.get(), " x \"%1\" --sub");
+    try c.toggle(try c.cat(&.{ shell, "Open" }), m.open, S.tr().verbOpenWith, " \"%1\"");
+    try c.toggle(try c.cat(&.{ shell, "ExtractHere" }), m.extract_here, S.tr().verbExtractHere, " x \"%1\" --here");
+    try c.toggle(try c.cat(&.{ shell, "ExtractTo" }), m.extract_to, S.tr().verbExtractTo, " x \"%1\" --sub");
 }
 
 fn progIdVerbs(c: Ctx, m: MenuItems) !void {
     const p = classes ++ prog_id ++ "\\shell\\MakePack.";
-    try c.toggle(p ++ "ExtractHere", m.extract_here, S.verbExtractHere.get(), " x \"%1\" --here");
-    try c.toggle(p ++ "ExtractTo", m.extract_to, S.verbExtractTo.get(), " x \"%1\" --sub");
+    try c.toggle(p ++ "ExtractHere", m.extract_here, S.tr().verbExtractHere, " x \"%1\" --here");
+    try c.toggle(p ++ "ExtractTo", m.extract_to, S.tr().verbExtractTo, " x \"%1\" --sub");
 }
 
 // ---- Explorer's New > MakePack archive ---------------------------------------------------------------
@@ -332,12 +344,12 @@ fn shellNew(c: Ctx, on: bool) !void {
 fn registerProgIdC(c: Ctx) !void {
     const p = classes ++ prog_id;
     const exe = try pw.exePath(c.a);
-    try c.set(p, null, S.progIdDesc.get());
+    try c.set(p, null, S.tr().progIdDesc);
     try c.set(p ++ "\\DefaultIcon", null, try c.cat(&.{ "\"", exe, "\",0" }));
     try c.set(p ++ "\\shell\\open\\command", null, try c.cat(&.{ "\"", exe, "\" \"%1\"" }));
     try progIdVerbs(c, menuC(c));
     try c.set(caps, "ApplicationName", S.app);
-    try c.set(caps, "ApplicationDescription", S.progIdDesc.get());
+    try c.set(caps, "ApplicationDescription", S.tr().progIdDesc);
     try c.set(reg_apps, "MakePack", caps);
 }
 

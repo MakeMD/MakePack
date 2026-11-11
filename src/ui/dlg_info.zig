@@ -32,8 +32,8 @@ pub const Info = struct {
         const flags = im.ImGuiTableFlags_Borders | im.ImGuiTableFlags_RowBg | im.ImGuiTableFlags_ScrollY | im.ImGuiTableFlags_Resizable;
         if (im.ImGui_BeginTableEx("##info_table", 2, flags, .{ .x = 0, .y = -foot }, 0)) {
             im.ImGui_TableSetupScrollFreeze(0, 1);
-            im.ImGui_TableSetupColumnEx(S.property.get(), im.ImGuiTableColumnFlags_WidthFixed, 160 * s, 0);
-            im.ImGui_TableSetupColumnEx(S.value.get(), im.ImGuiTableColumnFlags_WidthStretch, 0, 0);
+            im.ImGui_TableSetupColumnEx(S.tr().property, im.ImGuiTableColumnFlags_WidthFixed, 160 * s, 0);
+            im.ImGui_TableSetupColumnEx(S.tr().value, im.ImGuiTableColumnFlags_WidthStretch, 0, 0);
             im.ImGui_TableHeadersRow();
             for (f.rows, 0..) |r, i| {
                 im.ImGui_TableNextRow();
@@ -48,18 +48,20 @@ pub const Info = struct {
             }
             im.ImGui_EndTable();
         }
-        D.alignRight(&.{ S.copyButton.get(), S.close.get() });
-        if (D.button(S.copyButton.get(), "info_copy")) {
+        D.alignRight(&.{ S.tr().copyButton, S.tr().close });
+        if (D.button(S.tr().copyButton, "info_copy")) {
             var text: std.ArrayList(u8) = .empty;
             defer text.deinit(f.gpa);
             for (f.rows, 0..) |r, i| {
                 if (i > 0) text.appendSlice(f.gpa, "\r\n") catch {};
-                text.print(f.gpa, "{s}: {s}", .{ r.label, r.value }) catch {};
+                const line = S.fill(f.gpa, S.tr().labelValueFmt, .{ r.label, r.value }) catch continue;
+                defer f.gpa.free(line);
+                text.appendSlice(f.gpa, line) catch {};
             }
             _ = shell.setText(f.gpa, D.owner(d), text.items);
         }
         im.ImGui_SameLine();
-        if (D.button(S.close.get(), "info_close") or D.escPressed()) return false;
+        if (D.button(S.tr().close, "info_close") or D.escPressed()) return false;
         return true;
     }
 
@@ -86,6 +88,6 @@ pub fn open(d: *Dialogs, a: *engine.Archive, owned: bool) void {
     const ar = f.arena.allocator();
     // ponytail: Describe runs on the UI thread (it reads the list 7z.dll already holds; no decoding).
     f.rows = engine.describe(ar, d.ctx.io, a) catch &.{};
-    f.title_text = S.fill(ar, S.infoTitleFmt.get(), .{a.display()}) catch S.app;
+    f.title_text = S.fill(ar, S.tr().infoTitleFmt, .{a.display()}) catch S.app;
     D.push(d, Info, f, true);
 }

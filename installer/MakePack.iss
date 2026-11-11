@@ -33,6 +33,10 @@ CloseApplicationsFilter=*.exe,*.chm
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "uk"; MessagesFile: "compiler:Languages\Ukrainian.isl"
+Name: "pl"; MessagesFile: "compiler:Languages\Polish.isl"
+Name: "de"; MessagesFile: "compiler:Languages\German.isl"
+Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
 
 [Tasks]
 Name: "contextmenu"; Description: "{cm:TaskContextMenu}"
@@ -75,6 +79,18 @@ en.TaskAssoc=Register archive types (Extract here / Extract to folder in the con
 uk.TaskAssoc=Зареєструвати типи архівів (Розпакувати тут / Розпакувати в папку в контекстному меню, Відкрити за допомогою)
 en.TaskWin11Menu=MakePack entry in the Windows 11 context menu
 uk.TaskWin11Menu=Пункт MakePack у контекстному меню Windows 11
+pl.TaskContextMenu=Dodaj „Dodaj do archiwum” do menu kontekstowego
+pl.TaskAssoc=Zarejestruj typy archiwów (Wypakuj tutaj / Wypakuj do folderu w menu kontekstowym, Otwórz za pomocą)
+pl.TaskWin11Menu=Pozycja MakePack w menu kontekstowym Windows 11
+de.TaskContextMenu=„Zu Archiv hinzufügen“ zum Kontextmenü hinzufügen
+de.TaskAssoc=Archivtypen registrieren (Hier entpacken / In Ordner entpacken im Kontextmenü, Öffnen mit)
+de.TaskWin11Menu=MakePack-Eintrag im Kontextmenü von Windows 11
+es.TaskContextMenu=Añadir «Añadir al archivo» al menú contextual
+es.TaskAssoc=Registrar los tipos de archivo comprimido (Extraer aquí / Extraer en carpeta en el menú contextual, Abrir con)
+es.TaskWin11Menu=Entrada de MakePack en el menú contextual de Windows 11
+fr.TaskContextMenu=Ajouter « Ajouter à l’archive » au menu contextuel
+fr.TaskAssoc=Enregistrer les types d’archives (Extraire ici / Extraire dans un dossier dans le menu contextuel, Ouvrir avec)
+fr.TaskWin11Menu=Entrée MakePack dans le menu contextuel de Windows 11
 
 [Code]
 const

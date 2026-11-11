@@ -129,7 +129,7 @@ fn exec(env: Env, eng: *Engine, a: Allocator, out: *Io.Writer, args: []const []c
             diag.len = 0;
             return error.Damaged;
         }
-        try out.print("{s}\r\n", .{S.testOk.get()});
+        try out.print("{s}\r\n", .{S.tr().testOk});
     } else if (eql(u8, v, "l")) {
         const p = try parseOne(a, rest, diag);
         const arc = try openArchive(env, eng, a, p.archive, p.ask, diag);
@@ -164,7 +164,7 @@ fn exec(env: Env, eng: *Engine, a: Allocator, out: *Io.Writer, args: []const []c
 /// Cli.Bad: a switch that looks like a password in the arguments gets the "use -p or MAKEPACK_PASSWORD" answer.
 fn bad(diag: *Diag, arg: []const u8) error{ PasswordInArgs, BadSwitch } {
     if (std.ascii.startsWithIgnoreCase(arg, "-p") or std.ascii.startsWithIgnoreCase(arg, "-hp")) return error.PasswordInArgs;
-    Diag.set(diag, S.cliBadSwitchFmt.get(), .{arg});
+    Diag.set(diag, S.tr().cliBadSwitchFmt, .{arg});
     return error.BadSwitch;
 }
 
@@ -302,14 +302,14 @@ pub fn planAdd(env: Env, a: Allocator, args: []const []const u8, diag: *Diag) !A
     // Only with -p/-hp: a MAKEPACK_PASSWORD left in the environment must not encrypt archives nobody asked to.
     const password = if (ask) try getPassword(env, a, pw.fileName(archive), true, true) else null;
     if (password != null and !info.password) {
-        Diag.set(diag, S.cliNoPasswordFmt.get(), .{info.name});
+        Diag.set(diag, S.tr().cliNoPasswordFmt, .{info.name});
         return error.NoPasswordForFormat;
     }
     if (headers and k != .SevenZip) return bad(diag, "-hp"); // ponytail (from C#): reported like a password in the arguments
 
     const taken = pw.fileExists(if (volume > 0) try engine.part(a, archive, 1) else archive);
     if (taken and !overwrite) {
-        Diag.set(diag, S.cliExistsFmt.get(), .{archive});
+        Diag.set(diag, S.tr().cliExistsFmt, .{archive});
         return error.AlreadyExists;
     }
     return .{
@@ -355,7 +355,7 @@ fn expand(io: Io, a: Allocator, arg: []const u8, list: *std.ArrayList([]const u8
         }
     }
     if (list.items.len == before) {
-        Diag.set(diag, S.cliNoMatchFmt.get(), .{arg});
+        Diag.set(diag, S.tr().cliNoMatchFmt, .{arg});
         return error.FileNotFound;
     }
 }
@@ -380,10 +380,10 @@ fn envPassword(a: Allocator) ?[]const u8 {
 fn getPassword(env: Env, a: Allocator, title: []const u8, ask: bool, confirm: bool) ![]const u8 {
     if (envPassword(a)) |p| return p;
     if (!ask) return error.PasswordNeeded;
-    const label: ?[]const u8 = if (confirm) try std.mem.concat(a, u8, &.{ S.password.get(), ":" }) else null;
+    const label: ?[]const u8 = if (confirm) try std.mem.concat(a, u8, &.{ S.tr().password, ":" }) else null;
     const first = env.ask_password(a, title, label) orelse return error.Canceled;
     if (confirm) {
-        const again = env.ask_password(a, title, S.confirm.get());
+        const again = env.ask_password(a, title, S.tr().confirm);
         if (again == null or !eql(u8, again.?, first)) return error.PasswordsDiffer;
     }
     return first;
@@ -405,7 +405,7 @@ pub fn passwordFor(env: Env, a: Allocator, path: []const u8, probe: engine.Probe
 /// Cli.Open: the same checks as PasswordForm.OpenArchive, as errors instead of message boxes.
 fn openArchive(env: Env, eng: *Engine, a: Allocator, path: []const u8, ask: bool, diag: *Diag) !*engine.Archive {
     if (!pw.fileExists(path)) {
-        Diag.set(diag, S.fileNotFoundFmt.get(), .{path});
+        Diag.set(diag, S.tr().fileNotFoundFmt, .{path});
         return error.FileNotFound;
     }
     try eng.start(env, a);

@@ -157,11 +157,11 @@ const TempTask = struct {
                 if (!t.e.tick(d)) return true;
                 t.use = adopt(d, t.a, &t.e) orelse return false;
                 t.dir = engine.newTempDir(d.ctx.gpa, d.ctx.io) catch |err| {
-                    d.alert(.err, S.@"error".get(), engine.friendly(err, null));
+                    d.alert(.err, S.tr().@"error", engine.friendly(err, null));
                     return false;
                 };
                 t.state = .run;
-                t.run.start(d, S.extracting.get(), t, work, true);
+                t.run.start(d, S.tr().extracting, t, work, true);
                 return true;
             },
             .run => {
@@ -236,7 +236,7 @@ const TestTask = struct {
         t.ok = false;
         var buf: [600]u8 = undefined;
         // several archives: "Testing: name"
-        const title: []const u8 = if (t.files.len > 1) std.mem.print(&buf, "{s}: {s}", .{ S.testing.get(), t.a.?.display() }) catch S.testing.get() else S.testing.get();
+        const title: []const u8 = if (t.files.len > 1) S.fillZ(&buf, S.tr().labelValueFmt, .{ S.tr().testing, t.a.?.display() }) else S.tr().testing;
         t.run.start(d, title, t, work, true);
     }
 
@@ -268,7 +268,7 @@ const TestTask = struct {
                     if (t.ok) t.good += 1;
                     return t.nextFile(d);
                 }
-                P.message(d, if (t.ok) .info else .warning, S.app, if (t.ok) S.testOk.get() else S.testFailed.get(), .ok, false, null);
+                P.message(d, if (t.ok) .info else .warning, S.app, if (t.ok) S.tr().testOk else S.tr().testFailed, .ok, false, null);
                 return false;
             },
             .msg => return false,
@@ -285,7 +285,7 @@ const TestTask = struct {
 
     fn summary(t: *TestTask, d: *Dialogs) bool {
         var buf: [256]u8 = undefined;
-        const text = S.fillZ(&buf, S.testSummaryFmt.get(), .{ t.files.len, t.good });
+        const text = S.fillZ(&buf, S.tr().testSummaryFmt, .{ t.files.len, t.good });
         P.message(d, if (t.good == t.files.len) .info else .warning, S.app, text, .ok, false, null);
         return false;
     }
@@ -323,12 +323,12 @@ pub fn saveReport(d: *Dialogs, a: *engine.Archive, as_html: bool, dir: []const u
     const gpa = d.ctx.gpa;
     var nb: [600]u8 = undefined;
     const ext = if (as_html) ".html" else ".txt";
-    const name = std.mem.print(&nb, "{s}{s}{s}", .{ engine.baseName(a.display()), S.reportSuffix.get(), ext }) catch return;
-    const filters: []const kit.win.Filter = if (as_html) &.{.{ .name = "HTML", .spec = "*.html" }} else &.{.{ .name = S.textFiles.get(), .spec = "*.txt" }};
+    const name = std.mem.print(&nb, "{s}{s}{s}", .{ engine.baseName(a.display()), S.tr().reportSuffix, ext }) catch return;
+    const filters: []const kit.win.Filter = if (as_html) &.{.{ .name = "HTML", .spec = "*.html" }} else &.{.{ .name = S.tr().textFiles, .spec = "*.txt" }};
     const path = (kit.win.saveFile(gpa, D.owner(d), .{ .file_name = name, .folder = dir, .filters = filters, .default_ext = ext[1..] }) catch null) orelse return;
     defer gpa.free(path);
-    engine.writeReport(gpa, d.ctx.io, a, path, as_html) catch |e| return d.alert(.err, S.@"error".get(), engine.friendly(e, null));
-    const status = S.fill(gpa, S.reportSavedFmt.get(), .{fspath.basename(path)}) catch return;
+    engine.writeReport(gpa, d.ctx.io, a, path, as_html) catch |e| return d.alert(.err, S.tr().@"error", engine.friendly(e, null));
+    const status = S.fill(gpa, S.tr().reportSavedFmt, .{fspath.basename(path)}) catch return;
     d.ctx.post(.{ .status = status });
 }
 
@@ -352,7 +352,7 @@ const RecycleTask = struct {
                 if (!t.reply.done) return true;
                 if (t.reply.button == null) return false;
                 t.state = .run;
-                t.run.start(d, S.deleting.get(), t, work, true);
+                t.run.start(d, S.tr().deleting, t, work, true);
                 return true;
             },
             .run => {
@@ -380,9 +380,9 @@ pub fn deleteFiles(d: *Dialogs, paths: []const []const u8, nuke: bool) void {
     const what: []const u8 = if (paths.len == 1)
         std.mem.print(&wb, "\u{00AB}{s}\u{00BB}", .{fspath.basename(std.mem.trimEnd(u8, paths[0], "\\/"))}) catch ""
     else
-        S.fillZ(&wb, S.itemsFmt.get(), .{paths.len});
+        S.fillZ(&wb, kit.i18n.pick(S.tr().itemsN, paths.len), .{paths.len});
     var mb: [1024]u8 = undefined;
-    const text = S.fillZ(&mb, if (nuke) S.confirmNukeFmt.get() else S.confirmRecycleFmt.get(), .{what});
+    const text = S.fillZ(&mb, if (nuke) S.tr().confirmNukeFmt else S.tr().confirmRecycleFmt, .{what});
     P.message(d, if (nuke) .danger else .question, S.app, text, .yes_no, true, &t.reply);
     D.addTask(d, RecycleTask, t, true);
 }
@@ -444,9 +444,9 @@ const EditTask = struct {
                 d.ctx.post(.{ .detach_archive = t.use.? });
                 t.state = .run;
                 const title = switch (t.kind) {
-                    .delete => S.deleting.get(),
-                    .rename => S.renaming.get(),
-                    .add => S.adding.get(),
+                    .delete => S.tr().deleting,
+                    .rename => S.tr().renaming,
+                    .add => S.tr().adding,
                 };
                 t.run.start(d, title, t, work, true);
                 return true;
@@ -468,9 +468,9 @@ const EditTask = struct {
         const gpa = d.ctx.gpa;
         var sb: [600]u8 = undefined;
         const status: []const u8 = switch (t.kind) {
-            .delete => S.fillZ(&sb, S.deletedFmt.get(), .{t.count}),
-            .rename => S.fillZ(&sb, S.renamedFmt.get(), .{t.new_name}),
-            .add => S.fillZ(&sb, S.addedFmt.get(), .{t.files.len}),
+            .delete => S.fillZ(&sb, S.tr().deletedFmt, .{t.count}),
+            .rename => S.fillZ(&sb, S.tr().renamedFmt, .{t.new_name}),
+            .add => S.fillZ(&sb, S.tr().addedFmt, .{t.files.len}),
         };
         const source = gpa.dupe(u8, t.source) catch return;
         const cur = gpa.dupe(u8, t.cur) catch return gpa.free(source);
@@ -514,7 +514,7 @@ pub fn edit(d: *Dialogs, a: *engine.Archive, kind: EditKind, cur: []const u8) vo
             t.indices = gpa.dupe(u32, x.indices) catch &.{};
             t.count = x.count;
             t.state = .confirm;
-            P.message(d, .question, S.app, S.confirmDelete.get(), .yes_no, false, &t.reply);
+            P.message(d, .question, S.app, S.tr().confirmDelete, .yes_no, false, &t.reply);
         },
         .rename => |x| {
             // C# DoRename: no Ready (renaming rewrites the headers only).
@@ -559,7 +559,7 @@ pub fn offerNewArchive(d: *Dialogs, files: []const []const u8) void {
     const t = gpa.create(OfferTask) catch return;
     t.* = .{ .files = dupeList(gpa, files) catch return gpa.destroy(t) };
     var buf: [1024]u8 = undefined;
-    const text = std.mem.print(&buf, "{s}\n\n{s}", .{ S.notSupported.get(), S.offerNewArchive.get() }) catch S.notSupported.get();
+    const text = std.mem.print(&buf, "{s}\n\n{s}", .{ S.tr().notSupported, S.tr().offerNewArchive }) catch S.tr().notSupported;
     P.message(d, .question, S.app, text, .yes_no, false, &t.reply);
     D.addTask(d, OfferTask, t, true);
 }

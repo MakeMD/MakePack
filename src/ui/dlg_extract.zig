@@ -69,54 +69,56 @@ pub const Form = struct {
     reply: ?*Reply,
 
     pub fn title(_: *Form, _: []u8) []const u8 {
-        return D.noDots(S.extract.get());
+        return D.noDots(S.tr().extract);
     }
 
     pub fn body(f: *Form, d: *Dialogs) bool {
         const s = D.scale();
-        im.ImGui_TextUnformatted(S.destination.get());
+        im.ImGui_TextUnformatted(S.tr().destination);
         _ = D.input("extract_dest", &f.dest, 448, 0);
         im.ImGui_SameLine();
-        var bb: [128]u8 = undefined;
-        if (im.ImGui_ButtonEx(D.lbl(&bb, S.browse.get(), "extract_browse").ptr, .{ .x = 80 * s, .y = 0 })) {
-            if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .title = S.pickFolder.get(), .folder = D.bufText(&f.dest) }) catch null) |p| {
+        if (D.buttonMin(S.tr().browse, "extract_browse", 80)) {
+            if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .title = S.tr().pickFolder, .folder = D.bufText(&f.dest) }) catch null) |p| {
                 defer f.gpa.free(p);
                 D.setText(&f.dest, p);
             }
         }
         var sb: [600]u8 = undefined;
-        _ = D.checkbox(S.fillZ(&sb, S.subFolderFmt.get(), .{f.sub_name}), "extract_sub", &f.sub);
+        _ = D.checkbox(S.fillZ(&sb, S.tr().subFolderFmt, .{f.sub_name}), "extract_sub", &f.sub);
 
-        const modes = [_][]const u8{ S.ask.get(), S.overwrite.get(), S.skip.get(), S.rename.get() };
-        const pathss = [_][]const u8{ S.withPaths.get(), S.noPaths.get() };
-        const updates = [_][]const u8{ S.updateReplace.get(), S.updateNewer.get(), S.updateExisting.get() };
-        const deletes = [_][]const u8{ S.deleteNever.get(), S.deleteAsk.get(), S.deleteRecycle.get() };
+        const modes = [_][]const u8{ S.tr().ask, S.tr().overwrite, S.tr().skip, S.tr().rename };
+        const pathss = [_][]const u8{ S.tr().withPaths, S.tr().noPaths };
+        const updates = [_][]const u8{ S.tr().updateReplace, S.tr().updateNewer, S.tr().updateExisting };
+        const deletes = [_][]const u8{ S.tr().deleteNever, S.tr().deleteAsk, S.tr().deleteRecycle };
+        // Columns sized to the language: the captions, then combos that show their longest item whole.
+        const cap = D.capWidth(114, &.{ S.tr().ifExists, S.tr().update, S.tr().archiveAfter });
+        const cw = @max(D.comboWidth(160, &modes), D.comboWidth(160, &updates), D.comboWidth(160, &deletes));
+        const col2 = cap + cw + 14;
         // Update modes settle a clash by date; the overwrite question only belongs to "replace".
         im.ImGui_BeginDisabled(f.update != 0);
-        D.caption(S.ifExists.get(), 114);
-        _ = D.combo("extract_mode", &modes, &f.mode, 160);
+        D.caption(S.tr().ifExists, cap);
+        _ = D.combo("extract_mode", &modes, &f.mode, cw);
         im.ImGui_EndDisabled();
-        im.ImGui_SameLineEx(288 * s, -1);
-        D.caption(S.paths.get(), 0);
-        im.ImGui_SameLineEx(372 * s, -1);
-        _ = D.combo("extract_paths", &pathss, &f.paths, 168);
+        D.sameLineAt(col2);
+        D.caption(S.tr().paths, col2 + D.capWidth(84, &.{S.tr().paths}));
+        _ = D.combo("extract_paths", &pathss, &f.paths, D.comboWidth(168, &pathss));
 
-        D.caption(S.update.get(), 114);
-        _ = D.combo("extract_update", &updates, &f.update, 160);
-        D.tooltip(S.updateTip.get());
-        im.ImGui_SameLineEx(288 * s, -1);
-        _ = D.checkbox(S.keepBroken.get(), "extract_keep_broken", &f.keep_broken);
+        D.caption(S.tr().update, cap);
+        _ = D.combo("extract_update", &updates, &f.update, cw);
+        D.tooltip(S.tr().updateTip);
+        D.sameLineAt(col2);
+        _ = D.checkbox(S.tr().keepBroken, "extract_keep_broken", &f.keep_broken);
 
-        D.caption(S.archiveAfter.get(), 114);
-        _ = D.combo("extract_delete", &deletes, &f.delete, 160);
-        D.tooltip(S.deleteAfterTip.get());
+        D.caption(S.tr().archiveAfter, cap);
+        _ = D.combo("extract_delete", &deletes, &f.delete, cw);
+        D.tooltip(S.tr().deleteAfterTip);
 
         im.ImGui_Dummy(.{ .x = 0, .y = 8 * s });
-        const ok_text = D.noDots(S.extract.get());
-        D.alignRight(&.{ ok_text, S.cancel.get() });
+        const ok_text = D.noDots(S.tr().extract);
+        D.alignRight(&.{ ok_text, S.tr().cancel });
         var ok = D.primary(true, ok_text, "extract_ok");
         im.ImGui_SameLine();
-        if (D.button(S.cancel.get(), "extract_cancel") or D.escPressed()) return false;
+        if (D.button(S.tr().cancel, "extract_cancel") or D.escPressed()) return false;
         if (D.enterPressed()) ok = true;
         if (!ok) return true;
         const dest = std.mem.trim(u8, D.bufText(&f.dest), " \t");
@@ -197,7 +199,7 @@ const After = struct {
             .Ask => {
                 af.state = .asking;
                 var buf: [800]u8 = undefined;
-                P.message(d, .question, S.app, S.fillZ(&buf, S.deleteArchiveAskFmt.get(), .{fspath.basename(source)}), .yes_no, false, &af.reply);
+                P.message(d, .question, S.app, S.fillZ(&buf, S.tr().deleteArchiveAskFmt, .{fspath.basename(source)}), .yes_no, false, &af.reply);
             },
             .Recycle => af.state = .release,
         }
@@ -223,7 +225,7 @@ const After = struct {
             },
             .start => {
                 af.state = .recycling;
-                af.run.start(d, S.deleting.get(), af, work, true);
+                af.run.start(d, S.tr().deleting, af, work, true);
                 return .working;
             },
             .recycling => {
@@ -275,7 +277,7 @@ const ExtractTask = struct {
                 t.use = a;
                 if (t.no_ask) {
                     t.state = .run;
-                    t.run.start(d, S.extracting.get(), t, work, true);
+                    t.run.start(d, S.tr().extracting, t, work, true);
                 } else {
                     t.state = .form;
                     ask(d, a, &t.choice, &t.reply);
@@ -286,7 +288,7 @@ const ExtractTask = struct {
                 if (!t.reply.done) return true;
                 if (t.reply.button == null) return false;
                 t.state = .run;
-                t.run.start(d, S.extracting.get(), t, work, true);
+                t.run.start(d, S.tr().extracting, t, work, true);
                 return true;
             },
             .run => {
@@ -443,7 +445,7 @@ const QJob = struct {
         j.state = .run;
         j.run.id = "queue";
         var tb: [600]u8 = undefined;
-        const title = S.fillZ(&tb, S.extractingNofM.get(), .{ q.done, q.total, fspath.basename(j.args[1]) });
+        const title = S.fillZ(&tb, S.tr().extractingNofM, .{ q.done, q.total, fspath.basename(j.args[1]) });
         j.run.start(d, title, j, work, false);
     }
 

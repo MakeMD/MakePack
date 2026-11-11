@@ -22,14 +22,14 @@ const Row = struct {
     default: bool,
 };
 
-const menu_items = [_]struct { field: []const u8, text: S.Str, col: u1 }{
-    .{ .field = "open", .text = S.verbOpenWith, .col = 0 },
-    .{ .field = "extract_here", .text = S.verbExtractHere, .col = 0 },
-    .{ .field = "extract_to", .text = S.verbExtractTo, .col = 0 },
-    .{ .field = "add", .text = S.verbAddTo, .col = 1 },
-    .{ .field = "quick_add", .text = S.menuQuickAdd, .col = 1 },
-    .{ .field = "new", .text = S.menuNewArchive, .col = 1 },
-    .{ .field = "profiles", .text = S.menuProfiles, .col = 1 },
+const menu_items = [_]struct { field: []const u8, text: S.Key, col: u1 }{
+    .{ .field = "open", .text = .verbOpenWith, .col = 0 },
+    .{ .field = "extract_here", .text = .verbExtractHere, .col = 0 },
+    .{ .field = "extract_to", .text = .verbExtractTo, .col = 0 },
+    .{ .field = "add", .text = .verbAddTo, .col = 1 },
+    .{ .field = "quick_add", .text = .menuQuickAdd, .col = 1 },
+    .{ .field = "new", .text = .menuNewArchive, .col = 1 },
+    .{ .field = "profiles", .text = .menuProfiles, .col = 1 },
 };
 
 pub const Assoc = struct {
@@ -46,20 +46,20 @@ pub const Assoc = struct {
     rest_h: f32 = 0,
 
     pub fn title(_: *Assoc, _: []u8) []const u8 {
-        return S.assocTitle.get();
+        return S.tr().assocTitle;
     }
 
     pub fn body(f: *Assoc, d: *Dialogs) bool {
         const s = D.scale();
-        if (D.button(S.selectAll.get(), "assoc_all")) for (f.rows) |*r| {
+        if (D.button(S.tr().selectAll, "assoc_all")) for (f.rows) |*r| {
             r.checked = true;
         };
         im.ImGui_SameLine();
-        if (D.button(S.selectDefaults.get(), "assoc_defaults")) for (f.rows) |*r| {
+        if (D.button(S.tr().selectDefaults, "assoc_defaults")) for (f.rows) |*r| {
             r.checked = r.default;
         };
         im.ImGui_SameLine();
-        if (D.button(S.selectNone.get(), "assoc_none")) for (f.rows) |*r| {
+        if (D.button(S.tr().selectNone, "assoc_none")) for (f.rows) |*r| {
             r.checked = false;
         };
 
@@ -70,8 +70,8 @@ pub const Assoc = struct {
         const flags = im.ImGuiTableFlags_Borders | im.ImGuiTableFlags_RowBg | im.ImGuiTableFlags_ScrollY | im.ImGuiTableFlags_SizingFixedFit;
         if (im.ImGui_BeginTableEx("##assoc_table", 2, flags, .{ .x = 500 * s, .y = table_h }, 0)) {
             im.ImGui_TableSetupScrollFreeze(0, 1);
-            im.ImGui_TableSetupColumnEx(S.extension.get(), im.ImGuiTableColumnFlags_WidthFixed, 140 * s, 0);
-            im.ImGui_TableSetupColumnEx(S.currentApp.get(), im.ImGuiTableColumnFlags_WidthStretch, 0, 0);
+            im.ImGui_TableSetupColumnEx(S.tr().extension, im.ImGuiTableColumnFlags_WidthFixed, 140 * s, 0);
+            im.ImGui_TableSetupColumnEx(S.tr().currentApp, im.ImGuiTableColumnFlags_WidthStretch, 0, 0);
             im.ImGui_TableHeadersRow();
             for (f.rows) |*r| {
                 im.ImGui_TableNextRow();
@@ -87,7 +87,7 @@ pub const Assoc = struct {
         }
 
         // Which Explorer menu items exist at all (classic menu and the Windows 11 one).
-        im.ImGui_TextUnformatted(S.menuItemsLabel.get());
+        im.ImGui_TextUnformatted(S.tr().menuItemsLabel);
         // two columns: left = the archive's own verbs (0..2), right = the items on every file (3..6)
         for (0..4) |r| {
             const x0 = im.ImGui_GetCursorPosX();
@@ -96,17 +96,17 @@ pub const Assoc = struct {
             f.menuBox(r + 3);
         }
 
-        D.caption(S.quickFormat.get(), 252);
+        D.caption(S.tr().quickFormat, 252);
         _ = D.combo("assoc_quick", f.quick_names[0..f.quick_n], &f.quick, 120);
 
         im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Text, im.ImGui_GetStyle().*.Colors[im.ImGuiCol_TextDisabled]);
-        kit.ui.text("assoc_note", S.assocNote.get(), null, 500 * s);
+        kit.ui.text("assoc_note", S.tr().assocNote, null, 500 * s);
         im.ImGui_PopStyleColor();
 
-        D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-        const ok = D.primary(true, S.ok.get(), "assoc_ok") or D.enterPressed();
+        D.alignRight(&.{ S.tr().ok, S.tr().cancel });
+        const ok = D.primary(true, S.tr().ok, "assoc_ok") or D.enterPressed();
         im.ImGui_SameLine();
-        const cancel = D.button(S.cancel.get(), "assoc_cancel") or D.escPressed();
+        const cancel = D.button(S.tr().cancel, "assoc_cancel") or D.escPressed();
         f.rest_h = im.ImGui_GetCursorPosY() + im.ImGui_GetStyle().*.WindowPadding.y - table_h;
         if (ok) f.apply(d);
         return !ok and !cancel;
@@ -115,7 +115,7 @@ pub const Assoc = struct {
     fn menuBox(f: *Assoc, i: usize) void {
         var ib: [48]u8 = undefined;
         const id = std.mem.print(&ib, "assoc_menu_{s}", .{menu_items[i].field}) catch "assoc_menu";
-        _ = D.checkbox(menu_items[i].text.get(), id, &f.menu[i]);
+        _ = D.checkbox(S.get(menu_items[i].text), id, &f.menu[i]);
     }
 
     fn apply(f: *Assoc, d: *Dialogs) void {
@@ -148,7 +148,7 @@ pub const Assoc = struct {
         if (h.prefix.len == 0) assoc.notify(); // a test root (MAKEPACK_REGROOT) is no news for Explorer
         if (blocked.items.len > 0) {
             var buf: [1024]u8 = undefined;
-            P.message(d, .info, S.app, S.fillZ(&buf, S.blockedFmt.get(), .{blocked.items}), .ok, false, null);
+            P.message(d, .info, S.app, S.fillZ(&buf, S.tr().blockedFmt, .{blocked.items}), .ok, false, null);
         }
     }
 
@@ -174,8 +174,8 @@ pub fn open(d: *Dialogs) void {
         const o = assoc.owner(a, h, ext) catch assoc.Owner{ .prog_id = null, .dead = false, .user_choice = false, .choice_dead = false };
         const ours = if (o.prog_id) |p| std.mem.eql(u8, p, assoc.prog_id) else false;
         var text: []const u8 = if (ours) S.app else (o.prog_id orelse "");
-        if (o.dead) text = std.mem.concat(a, u8, &.{ text, S.deadSuffix.get() }) catch text;
-        if (o.user_choice) text = std.mem.concat(a, u8, &.{ text, S.userChoiceSuffix.get() }) catch text;
+        if (o.dead) text = std.mem.concat(a, u8, &.{ text, S.tr().deadSuffix }) catch text;
+        if (o.user_choice) text = std.mem.concat(a, u8, &.{ text, S.tr().userChoiceSuffix }) catch text;
         var is_default = ours or o.dead or (o.prog_id == null or o.prog_id.?.len == 0);
         for (assoc.defaults) |x| if (std.mem.eql(u8, x, ext)) {
             is_default = true;

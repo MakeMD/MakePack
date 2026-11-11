@@ -509,7 +509,7 @@ test "corrupt archives: truncated 7z, flipped data byte, not an archive" {
         const checked = a.check(null, s.sink());
         // measured: zip and tar open with a partial list and unexpected_end; gz opens clean, its check fails
         if (c.fmt != .GZip) try testing.expect(a.props.error_flags & sz.arc_flag.unexpected_end != 0);
-        if (c.fmt != .GZip) try testing.expectEqual(@import("strings.zig").openedTruncated, @import("core/engine.zig").openWarning(a.props).?);
+        if (c.fmt != .GZip) try testing.expectEqualStrings(@import("strings.zig").tr().openedTruncated, @import("core/engine.zig").openWarning(a.props).?);
         try testing.expectError(error.DataError, checked);
         try testing.expect(!try oracleTest(fx, short, null));
     }

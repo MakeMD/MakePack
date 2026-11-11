@@ -64,13 +64,13 @@ pub const Msg = struct {
 
         var yb: [64]u8 = undefined;
         var nb: [64]u8 = undefined;
-        const yes = capFirst(&yb, S.yes.get());
-        const no = capFirst(&nb, S.no.get());
+        const yes = capFirst(&yb, S.tr().yes);
+        const no = capFirst(&nb, S.tr().no);
         var answer: ?usize = null;
         switch (m.buttons) {
             .ok => {
-                D.alignRight(&.{S.ok.get()});
-                if (D.primary(true, S.ok.get(), "msg_ok")) answer = 0;
+                D.alignRight(&.{S.tr().ok});
+                if (D.primary(true, S.tr().ok, "msg_ok")) answer = 0;
                 if (im.ImGui_IsWindowAppearing()) im.ImGui_SetItemDefaultFocus();
                 if (D.enterPressed() or D.escPressed()) answer = 0;
             },
@@ -160,10 +160,10 @@ pub const Password = struct {
             p.focus = false;
         }
         const entered = D.input("password_input", &p.box, 336, im.ImGuiInputTextFlags_Password | im.ImGuiInputTextFlags_EnterReturnsTrue);
-        D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-        var ok = D.primary(true, S.ok.get(), "password_ok") or entered;
+        D.alignRight(&.{ S.tr().ok, S.tr().cancel });
+        var ok = D.primary(true, S.tr().ok, "password_ok") or entered;
         im.ImGui_SameLine();
-        const cancel = D.button(S.cancel.get(), "password_cancel") or D.escPressed();
+        const cancel = D.button(S.tr().cancel, "password_cancel") or D.escPressed();
         if (!entered and D.enterPressed()) ok = true;
         if (cancel) return false; // deinit answers "cancelled"
         if (ok) {
@@ -196,7 +196,7 @@ pub fn askPassword(d: *Dialogs, title: []const u8, prompt: ?[]const u8, reply: *
         gpa.destroy(p);
         fallback(reply);
     };
-    const q = gpa.dupe(u8, prompt orelse S.enterPassword.get()) catch return {
+    const q = gpa.dupe(u8, prompt orelse S.tr().enterPassword) catch return {
         gpa.free(t);
         gpa.destroy(p);
         fallback(reply);
@@ -245,14 +245,14 @@ pub const Name = struct {
         }
         const entered = D.input("name_input", &n.box, 356, im.ImGuiInputTextFlags_EnterReturnsTrue);
         if (n.mode == .profile_full) {
-            _ = D.checkbox(S.defaultProfile.get(), "name_default", &n.is_default);
-            _ = D.checkbox(S.profileInMenu.get(), "name_menu", &n.in_menu);
+            _ = D.checkbox(S.tr().defaultProfile, "name_default", &n.is_default);
+            _ = D.checkbox(S.tr().profileInMenu, "name_menu", &n.in_menu);
         }
-        D.alignRight(&.{ S.ok.get(), S.cancel.get() });
+        D.alignRight(&.{ S.tr().ok, S.tr().cancel });
         const ok_on = n.valid();
-        var ok = D.primary(ok_on, S.ok.get(), "name_ok");
+        var ok = D.primary(ok_on, S.tr().ok, "name_ok");
         im.ImGui_SameLine();
-        if (D.button(S.cancel.get(), "name_cancel") or D.escPressed()) return false;
+        if (D.button(S.tr().cancel, "name_cancel") or D.escPressed()) return false;
         if ((entered or D.enterPressed()) and ok_on) ok = true;
         if (ok) {
             const t = d.ctx.gpa.dupe(u8, std.mem.trim(u8, D.bufText(&n.box), " \t")) catch null;
@@ -284,7 +284,7 @@ pub fn askName(d: *Dialogs, title: []const u8, prompt: ?[]const u8, mode: NameMo
         gpa.destroy(n);
         fallback(reply);
     };
-    const q = gpa.dupe(u8, prompt orelse S.profileName.get()) catch return {
+    const q = gpa.dupe(u8, prompt orelse S.tr().profileName) catch return {
         gpa.free(t);
         gpa.destroy(n);
         fallback(reply);
@@ -311,22 +311,22 @@ pub const Conflict = struct {
         _ = d;
         const s = D.scale();
         im.ImGui_PushFontFloat(d_bold(), im.ImGui_GetStyle().*.FontSizeBase * 1.15);
-        im.ImGui_TextUnformatted(S.fileExists.get());
+        im.ImGui_TextUnformatted(S.tr().fileExists);
         im.ImGui_PopFont();
         kit.ui.text("conflict_path", c.path, null, 460 * s);
         im.ImGui_Dummy(.{ .x = 0, .y = 4 * s });
-        _ = D.checkbox(S.applyToAll.get(), "conflict_all", &c.all);
+        _ = D.checkbox(S.tr().applyToAll, "conflict_all", &c.all);
         var answer: ?usize = null;
-        if (D.button(if (c.append) S.replace.get() else S.overwrite.get(), "conflict_overwrite")) answer = 0;
+        if (D.button(if (c.append) S.tr().replace else S.tr().overwrite, "conflict_overwrite")) answer = 0;
         if (im.ImGui_IsWindowAppearing()) im.ImGui_SetItemDefaultFocus();
         im.ImGui_SameLine();
-        if (D.button(S.skip.get(), "conflict_skip")) answer = 1;
+        if (D.button(S.tr().skip, "conflict_skip")) answer = 1;
         if (!c.append) {
             im.ImGui_SameLine();
-            if (D.button(S.rename.get(), "conflict_rename")) answer = 2;
+            if (D.button(S.tr().rename, "conflict_rename")) answer = 2;
         }
         im.ImGui_SameLine();
-        if (D.button(S.cancel.get(), "conflict_cancel") or D.escPressed()) return false;
+        if (D.button(S.tr().cancel, "conflict_cancel") or D.escPressed()) return false;
         if (answer) |a| {
             if (c.reply) |r| r.* = .{ .done = true, .button = a, .flag1 = c.all };
             c.reply = null;
@@ -375,7 +375,7 @@ const CliAsk = struct {
 /// Its own kit.app window (title = the archive name), blocks until OK / Cancel / close. null = cancelled.
 pub fn cliAskPassword(gpa: Allocator, title: []const u8, label: ?[]const u8) ?[]u8 {
     if (kit.app.current() != null) return null; // never inside the GUI (the GUI has its own prompt)
-    var st: CliAsk = .{ .title = title, .prompt = label orelse S.enterPassword.get() };
+    var st: CliAsk = .{ .title = title, .prompt = label orelse S.tr().enterPassword };
     const app = kit.app.App.init(gpa, .{
         .title = title,
         .size = .{ 380, 150 },
@@ -404,9 +404,9 @@ fn cliFrame(app: *kit.app.App) void {
     }
     im.ImGui_SetNextItemWidth(-1);
     const entered = im.ImGui_InputText("##password_input", &st.box, st.box.len, im.ImGuiInputTextFlags_Password | im.ImGuiInputTextFlags_EnterReturnsTrue);
-    D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-    if (D.primary(true, S.ok.get(), "password_ok") or entered) st.answer = true;
+    D.alignRight(&.{ S.tr().ok, S.tr().cancel });
+    if (D.primary(true, S.tr().ok, "password_ok") or entered) st.answer = true;
     im.ImGui_SameLine();
-    if (D.button(S.cancel.get(), "password_cancel") or im.ImGui_IsKeyPressed(im.ImGuiKey_Escape)) st.answer = false;
+    if (D.button(S.tr().cancel, "password_cancel") or im.ImGui_IsKeyPressed(im.ImGuiKey_Escape)) st.answer = false;
     if (st.answer != null) app.quit();
 }

@@ -622,7 +622,7 @@ pub const Model = struct {
             pw_.writeAll(", ") catch {};
             pw_.writeAll(S.bytes(&b, total)) catch {};
         }
-        return S.fillZ(buf, if (any) S.chosenFmt.get() else S.totalFmt.get(), .{pw_.buffered()});
+        return S.fillZ(buf, if (any) S.tr().chosenFmt else S.tr().totalFmt, .{pw_.buffered()});
     }
 
     /// The address bar: the folder, or "name.zip\sub - ZIP archive, unpacked size N bytes".
@@ -635,7 +635,7 @@ pub const Model = struct {
         var where_buf: [1024]u8 = undefined;
         var b: [64]u8 = undefined;
         var fb: [32]u8 = undefined;
-        return S.fillZ(buf, S.archiveAddressFmt.get(), .{ m.where(&where_buf), formatName(&fb, a), S.bytes(&b, total) });
+        return S.fillZ(buf, S.tr().archiveAddressFmt, .{ m.where(&where_buf), formatName(&fb, a), S.bytes(&b, total) });
     }
 
     /// "name.zip\sub\dir" (the address, the favorite's default name).
@@ -818,7 +818,7 @@ pub const Model = struct {
     pub fn newFolder(m: *Model) !?usize {
         if (m.a != null) return null;
         const ar = m.row_arena.allocator();
-        var name: []const u8 = S.newFolderName.get();
+        var name: []const u8 = S.tr().newFolderName;
         var n: u32 = 2;
         while (true) : (n += 1) {
             const p = try join(ar, m.dir, name);
@@ -826,7 +826,7 @@ pub const Model = struct {
                 try shell.makeDir(m.gpa, p);
                 break;
             }
-            name = try ar.print("{s} ({d})", .{ S.newFolderName.get(), n });
+            name = try ar.print("{s} ({d})", .{ S.tr().newFolderName, n });
         }
         const keep = try m.gpa.dupe(u8, name);
         defer m.gpa.free(keep);

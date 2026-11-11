@@ -89,6 +89,9 @@ pub const Settings = struct {
     ExtractDeleteAfter: types.DeleteAfter = .Never,
     /// Which extracted files inherit the archive's "from the Internet" mark.
     Motw: types.MotwPolicy = .Risky,
+    /// UI language: "Auto" (the Windows display language) or a kit.i18n code: "en", "uk", "pl", "de", "es", "fr".
+    /// Also mirrored to Software\MakePack Language for the Explorer menu DLL (assoc.setLanguage).
+    Language: []const u8 = "Auto",
     /// Where new archives go. null = next to the files being packed.
     ArchiveFolder: ?[]const u8 = null,
     /// The main window: x, y, width, height; where it was, how the list looked, which folder it showed last.
@@ -102,6 +105,11 @@ pub const Settings = struct {
     Favorites: []const Favorite = &.{},
     /// Named option sets for the New archive dialog and `a --profile`; at most one IsDefault.
     Profiles: []const Profile = &.{},
+
+    /// The saved language choice; null = Auto (also for an unknown code).
+    pub fn lang(s: *const Settings) ?kit.i18n.Lang {
+        return .parse(s.Language);
+    }
 
     /// Settings.FindProfile: names match like .NET's OrdinalIgnoreCase ("backup" finds "Backup", Cyrillic too).
     pub fn findProfile(s: *const Settings, profile_name: []const u8) ?*const Profile {
@@ -385,6 +393,8 @@ test "defaults are the C# initializers" {
     try tt.expectEqual(types.DeleteAfter.Never, s.ExtractDeleteAfter);
     try tt.expectEqual(types.MotwPolicy.Risky, s.Motw);
     try tt.expect(s.ArchiveFolder == null and s.Window == null and s.Favorites.len == 0 and s.Profiles.len == 0);
+    try tt.expect(s.lang() == null); // "Auto"
+    try tt.expectEqual(kit.i18n.Lang.pl, (Settings{ .Language = "pl" }).lang().?);
     const p: Profile = .{ .Name = "Fresh" };
     try tt.expectEqual(types.CompressionMethod.Default, p.Method); // default(enum) would be Copy
     try tt.expectEqualStrings(".7z", p.ext());

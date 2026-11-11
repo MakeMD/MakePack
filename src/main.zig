@@ -33,6 +33,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     settings.init(gpa, io); // Settings.Current
     defer settings.deinit();
+    kit.i18n.apply(settings.current().lang()); // the saved language from here on: CLI, dialogs, main window
     const hive = testHive(arena);
     const env: cli.Env = .{ .gpa = gpa, .io = io, .ask_password = Dialogs.cliAskPassword, .hive = hive };
 

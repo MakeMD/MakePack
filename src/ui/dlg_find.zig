@@ -191,7 +191,7 @@ pub const Find = struct {
     running: bool = false,
 
     pub fn title(_: *Find, _: []u8) []const u8 {
-        return S.findFilesTitle.get();
+        return S.tr().findFilesTitle;
     }
 
     pub fn body(f: *Find, d: *Dialogs) bool {
@@ -205,17 +205,17 @@ pub const Find = struct {
             if (f.job.takeFinished()) f.finish();
             d.ctx.app.requestFrames(1);
         }
-        const cap: f32 = 144;
+        const cap = D.capWidth(144, &.{ S.tr().fileMasks, S.tr().textToFind, S.tr().lookIn });
         const avail = im.ImGui_GetContentRegionAvail().x / s;
-        D.caption(S.fileMasks.get(), cap);
+        const browse_w = @max(100, D.textWidth(S.tr().browse) + im.ImGui_GetStyle().*.FramePadding.x * 2 / s);
+        D.caption(S.tr().fileMasks, cap);
         _ = D.input("find_masks", &f.masks, avail - cap, 0);
-        D.caption(S.textToFind.get(), cap);
+        D.caption(S.tr().textToFind, cap);
         _ = D.input("find_text", &f.text, avail - cap, 0);
-        D.caption(S.lookIn.get(), cap);
-        _ = D.input("find_look_in", &f.look_in, avail - cap - 108, 0);
+        D.caption(S.tr().lookIn, cap);
+        _ = D.input("find_look_in", &f.look_in, avail - cap - browse_w - im.ImGui_GetStyle().*.ItemSpacing.x / s, 0);
         im.ImGui_SameLine();
-        var bb: [128]u8 = undefined;
-        if (im.ImGui_ButtonEx(D.lbl(&bb, S.browse.get(), "find_browse").ptr, .{ .x = 100 * s, .y = 0 })) {
+        if (D.buttonMin(S.tr().browse, "find_browse", browse_w)) {
             const cur = D.bufText(&f.look_in);
             if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .folder = if (engine.dirExists(cur)) cur else null }) catch null) |p| {
                 defer f.gpa.free(p);
@@ -223,19 +223,19 @@ pub const Find = struct {
             }
         }
         im.ImGui_SetCursorPosX(im.ImGui_GetCursorPosX() + cap * s);
-        _ = D.checkbox(S.matchCase.get(), "find_case", &f.match_case);
-        im.ImGui_SameLineEx((cap + 174) * s, -1);
-        _ = D.checkbox(S.subfolders.get(), "find_subfolders", &f.subfolders);
-        im.ImGui_SameLineEx((cap + 314) * s, -1);
-        _ = D.checkbox(S.inArchives.get(), "find_archives", &f.archives);
+        _ = D.checkbox(S.tr().matchCase, "find_case", &f.match_case);
+        D.flowAt(cap + 174, D.checkboxWidth(S.tr().subfolders), cap);
+        _ = D.checkbox(S.tr().subfolders, "find_subfolders", &f.subfolders);
+        D.flowAt(cap + 314, D.checkboxWidth(S.tr().inArchives), cap);
+        _ = D.checkbox(S.tr().inArchives, "find_archives", &f.archives);
 
         const foot = (im.ImGui_GetFrameHeightWithSpacing() + im.ImGui_GetTextLineHeightWithSpacing()) + 8 * s;
         const flags = im.ImGuiTableFlags_Borders | im.ImGuiTableFlags_RowBg | im.ImGuiTableFlags_ScrollY | im.ImGuiTableFlags_Resizable;
         if (im.ImGui_BeginTableEx("##find_table", 3, flags, .{ .x = 0, .y = -foot }, 0)) {
             im.ImGui_TableSetupScrollFreeze(0, 1);
-            im.ImGui_TableSetupColumnEx(S.fileColumn.get(), im.ImGuiTableColumnFlags_WidthFixed, 200 * s, 0);
-            im.ImGui_TableSetupColumnEx(S.location.get(), im.ImGuiTableColumnFlags_WidthStretch, 0, 0);
-            im.ImGui_TableSetupColumnEx(S.size.get(), im.ImGuiTableColumnFlags_WidthFixed, 100 * s, 0);
+            im.ImGui_TableSetupColumnEx(S.tr().fileColumn, im.ImGuiTableColumnFlags_WidthFixed, 200 * s, 0);
+            im.ImGui_TableSetupColumnEx(S.tr().location, im.ImGuiTableColumnFlags_WidthStretch, 0, 0);
+            im.ImGui_TableSetupColumnEx(S.tr().size, im.ImGuiTableColumnFlags_WidthFixed, 100 * s, 0);
             im.ImGui_TableHeadersRow();
             var clip = std.mem.zeroes(im.ImGuiListClipper);
             im.ImGuiListClipper_Begin(&clip, @intCast(f.rows.items.len), -1);
@@ -266,26 +266,26 @@ pub const Find = struct {
         var sb: [1600]u8 = undefined;
         kit.ui.text("find_status", f.statusText(&sb), null, 0);
 
-        const find_text = if (f.running) S.stop.get() else S.tbFind.get();
-        D.alignRight(&.{ find_text, S.locate.get(), S.tbView.get(), S.close.get() });
+        const find_text = if (f.running) S.tr().stop else S.tr().tbFind;
+        D.alignRight(&.{ find_text, S.tr().locate, S.tr().tbView, S.tr().close });
         if (D.primary(true, find_text, "find_go") or (D.enterPressed() and !f.running)) {
             if (f.running) f.job.cancel() else f.start();
         }
         im.ImGui_SameLine();
-        if (D.buttonOn(f.sel != null, S.locate.get(), "find_locate")) f.locate(d); // both act on the selected hit
+        if (D.buttonOn(f.sel != null, S.tr().locate, "find_locate")) f.locate(d); // both act on the selected hit
         im.ImGui_SameLine();
-        if (D.buttonOn(f.sel != null, S.tbView.get(), "find_view")) f.view(d);
+        if (D.buttonOn(f.sel != null, S.tr().tbView, "find_view")) f.view(d);
         im.ImGui_SameLine();
-        if (D.button(S.close.get(), "find_close") or D.escPressed()) return false;
+        if (D.button(S.tr().close, "find_close") or D.escPressed()) return false;
         return true;
     }
 
     fn statusText(f: *Find, buf: []u8) []const u8 {
         if (f.err_len > 0 and !f.running) return f.err_text[0..f.err_len];
         var wr: std.Io.Writer = .fixed(buf);
-        S.write(&wr, S.foundFmt.get(), .{f.rows.items.len}) catch {};
+        S.write(&wr, S.tr().foundFmt, .{f.rows.items.len}) catch {};
         const sk = f.skipped.load(.acquire);
-        if (sk > 0) S.write(&wr, S.skippedFmt.get(), .{sk}) catch {};
+        if (sk > 0) S.write(&wr, S.tr().skippedFmt, .{sk}) catch {};
         f.lock.lock();
         if (f.running and f.current_len > 0) wr.print("  -  {s}", .{f.current[0..f.current_len]}) catch {};
         f.lock.unlock();
@@ -602,7 +602,7 @@ const ViewFound = struct {
                 t.index = found;
                 t.dir = engine.newTempDir(gpa, d.ctx.io) catch return false;
                 t.state = .run;
-                t.run.start(d, S.extracting.get(), t, work, true);
+                t.run.start(d, S.tr().extracting, t, work, true);
                 return true;
             },
             .run => {

@@ -230,22 +230,22 @@ test "assoc: --register defaults writes the ProgID, Capabilities, verbs and clai
 
     const exe = exePath(&t);
     const p = classes ++ assoc.prog_id;
-    try expectStr(S.progIdDesc.get(), t.str(p, null));
+    try expectStr(S.tr().progIdDesc, t.str(p, null));
     try expectStr(t.print("\"{s}\",0", .{exe}), t.str(p ++ "\\DefaultIcon", null));
     try expectStr(t.print("\"{s}\" \"%1\"", .{exe}), t.str(p ++ "\\shell\\open\\command", null));
-    try expectVerb(&t, p ++ "\\shell\\MakePack.ExtractHere", S.verbExtractHere.get(), " x \"%1\" --here");
-    try expectVerb(&t, p ++ "\\shell\\MakePack.ExtractTo", S.verbExtractTo.get(), " x \"%1\" --sub");
+    try expectVerb(&t, p ++ "\\shell\\MakePack.ExtractHere", S.tr().verbExtractHere, " x \"%1\" --here");
+    try expectVerb(&t, p ++ "\\shell\\MakePack.ExtractTo", S.tr().verbExtractTo, " x \"%1\" --sub");
     try expectStr("MakePack", t.str("Software\\MakePack\\Capabilities", "ApplicationName"));
-    try expectStr(S.progIdDesc.get(), t.str("Software\\MakePack\\Capabilities", "ApplicationDescription"));
+    try expectStr(S.tr().progIdDesc, t.str("Software\\MakePack\\Capabilities", "ApplicationDescription"));
     try expectStr("Software\\MakePack\\Capabilities", t.str("Software\\RegisteredApplications", "MakePack"));
 
     for (assoc.all) |ext| {
         try expectStr(assoc.prog_id, t.str("Software\\MakePack\\Capabilities\\FileAssociations", t.print(".{s}", .{ext})));
         try expectStr("", t.str(t.print(classes ++ ".{s}\\OpenWithProgids", .{ext}), assoc.prog_id));
         const shell = t.print(classes ++ "SystemFileAssociations\\.{s}\\shell\\MakePack.", .{ext});
-        try expectVerb(&t, t.print("{s}Open", .{shell}), S.verbOpenWith.get(), " \"%1\"");
-        try expectVerb(&t, t.print("{s}ExtractHere", .{shell}), S.verbExtractHere.get(), " x \"%1\" --here");
-        try expectVerb(&t, t.print("{s}ExtractTo", .{shell}), S.verbExtractTo.get(), " x \"%1\" --sub");
+        try expectVerb(&t, t.print("{s}Open", .{shell}), S.tr().verbOpenWith, " \"%1\"");
+        try expectVerb(&t, t.print("{s}ExtractHere", .{shell}), S.tr().verbExtractHere, " x \"%1\" --here");
+        try expectVerb(&t, t.print("{s}ExtractTo", .{shell}), S.tr().verbExtractTo, " x \"%1\" --sub");
         var claimed = false;
         for (assoc.defaults) |d| claimed = claimed or std.mem.eql(u8, d, ext);
         try testing.expectEqual(claimed, assoc.isOurs(t.hive(), ext));
@@ -356,13 +356,13 @@ test "assoc: --addmenu, quick format, profiles in the menu, ShellNew, applyMenu 
     var buf: [256]u8 = undefined;
     for ([_][]const u8{ "*", "Directory" }) |parent| {
         const base = t.print(classes ++ "{s}\\shell\\MakePack.", .{parent});
-        try expectVerb(&t, t.print("{s}Add", .{base}), S.verbAddTo.get(), " a \"%1\"");
+        try expectVerb(&t, t.print("{s}Add", .{base}), S.tr().verbAddTo, " a \"%1\"");
         try expectStr("Player", t.str(t.print("{s}Add", .{base}), "MultiSelectModel"));
-        try expectVerb(&t, t.print("{s}QuickAdd", .{base}), S.fillZ(&buf, S.verbQuickAddFmt.get(), .{".7z"}), " a --quick \"%1\"");
+        try expectVerb(&t, t.print("{s}QuickAdd", .{base}), S.fillZ(&buf, S.tr().verbQuickAddFmt, .{".7z"}), " a --quick \"%1\"");
         try expectStr("Player", t.str(t.print("{s}QuickAdd", .{base}), "MultiSelectModel"));
-        try expectVerb(&t, t.print("{s}P01", .{base}), S.fillZ(&buf, S.verbProfileFmt.get(), .{ ".zip", "Backup" }), " a --profile \"Backup\" \"%1\"");
+        try expectVerb(&t, t.print("{s}P01", .{base}), S.fillZ(&buf, S.tr().verbProfileFmt, .{ ".zip", "Backup" }), " a --profile \"Backup\" \"%1\"");
         try expectStr("Player", t.str(t.print("{s}P01", .{base}), "MultiSelectModel"));
-        try expectVerb(&t, t.print("{s}P02", .{base}), S.fillZ(&buf, S.verbProfileSeparateFmt.get(), .{ ".exe", "Кожен" }), " a --profile \"Кожен\" \"%1\"");
+        try expectVerb(&t, t.print("{s}P02", .{base}), S.fillZ(&buf, S.tr().verbProfileSeparateFmt, .{ ".exe", "Кожен" }), " a --profile \"Кожен\" \"%1\"");
         try testing.expect(!t.exists(t.print("{s}P03", .{base})));
     }
     try expectStr("Backup", t.str("Software\\MakePack\\MenuProfiles\\01", "Name"));
@@ -378,7 +378,7 @@ test "assoc: --addmenu, quick format, profiles in the menu, ShellNew, applyMenu 
     // The quick format renames the item (and QuickExt for the DLL).
     try assoc.setQuickKind(h, .Zip);
     try assoc.applyMenu(h, &profiles);
-    try expectStr(S.fillZ(&buf, S.verbQuickAddFmt.get(), .{".zip"}), t.str(classes ++ "*\\shell\\MakePack.QuickAdd", null));
+    try expectStr(S.fillZ(&buf, S.tr().verbQuickAddFmt, .{".zip"}), t.str(classes ++ "*\\shell\\MakePack.QuickAdd", null));
 
     // Profiles are rewritten whole: a stale P05 and the dropped ones go.
     try t.set(classes ++ "*\\shell\\MakePack.P05", null, "stale");
@@ -413,6 +413,24 @@ test "assoc: --addmenu, quick format, profiles in the menu, ShellNew, applyMenu 
     // Anything but "on" is off.
     try testing.expectEqual(@as(u8, 0), cli.registryVerb(env, &.{ "--addmenu", "yes" }, &profiles));
     try testing.expect(!t.exists(classes ++ "*\\shell\\MakePack.Add"));
+
+    // Language: the value for the menu DLL; this exe owns the registration, so the classic captions follow.
+    const lang_saved = kit.i18n.current();
+    defer kit.i18n.set(lang_saved);
+    kit.i18n.set(.uk);
+    try assoc.setLanguage(h, "uk", &profiles);
+    try expectStr("uk", t.str("Software\\MakePack", "Language"));
+    try expectStr(S.tr().verbExtractHere, t.str(sfa ++ "ExtractHere", null));
+    kit.i18n.set(.en);
+    try assoc.setLanguage(h, "Auto", &profiles);
+    try expectStr("Auto", t.str("Software\\MakePack", "Language"));
+    try expectStr("Extract here", t.str(sfa ++ "ExtractHere", null));
+    // Another copy's registration (installed vs dev build) keeps its captions; only the value changes.
+    try t.set(classes ++ assoc.prog_id ++ "\\shell\\open\\command", null, "\"C:\\Other\\MakePack.exe\" \"%1\"");
+    kit.i18n.set(.uk);
+    try assoc.setLanguage(h, "pl", &profiles);
+    try expectStr("pl", t.str("Software\\MakePack", "Language"));
+    try expectStr("Extract here", t.str(sfa ++ "ExtractHere", null));
 }
 
 test "assoc: heal only reads a healthy registration, repairs a half-removed one, never hijacks another copy" {
@@ -723,9 +741,9 @@ test "cli: which argument lists are scripts (the rest go to the GUI)" {
 }
 
 test "cli: exit codes and messages decided before the engine runs" {
-    const saved = S.uk;
-    defer S.uk = saved;
-    S.uk = false;
+    const saved = kit.i18n.current();
+    defer kit.i18n.set(saved);
+    kit.i18n.set(.en);
     var pv = try PasswordVar.set(null);
     defer pv.restore();
     var tmp = try testutil.TempDir.init(testing.allocator, testing.io);
@@ -775,7 +793,7 @@ test "cli: exit codes and messages decided before the engine runs" {
 
     // Passwords for a: 255 when the prompt is cancelled, 11 when the two entries differ, 7 for a format without
     // encryption and for -hp outside 7z.
-    try expectRun(255, &.{ "a", "-p", out, src }, neverAsk, S.cancelled.get());
+    try expectRun(255, &.{ "a", "-p", out, src }, neverAsk, S.tr().cancelled);
     ask_count = 0;
     try expectRun(11, &.{ "a", "-p", out, src }, askDiffer, "do not match");
     try testing.expectEqual(@as(usize, 2), ask_count);
@@ -981,9 +999,9 @@ test "cli: a -y moves the old archive aside and puts it back when compress fails
 test "cli end to end: a / t / l / x -y with 7z.exe as the oracle" {
     const paths = @import("paths");
     try needEngine();
-    const saved = S.uk;
-    defer S.uk = saved;
-    S.uk = false;
+    const saved = kit.i18n.current();
+    defer kit.i18n.set(saved);
+    kit.i18n.set(.en);
     var pv = try PasswordVar.set(null);
     defer pv.restore();
     var tmp = try testutil.TempDir.init(testing.allocator, testing.io);

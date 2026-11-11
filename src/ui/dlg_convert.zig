@@ -65,7 +65,7 @@ pub const Convert = struct {
     done: bool = false,
 
     pub fn title(_: *Convert, _: []u8) []const u8 {
-        return S.convertTitle.get();
+        return S.tr().convertTitle;
     }
 
     pub fn addArchives(f: *Convert, paths: []const []const u8) void {
@@ -93,7 +93,7 @@ pub const Convert = struct {
         f.poll(d);
         if (f.done) return false;
         const s = D.scale();
-        im.ImGui_TextUnformatted(S.convertArchives.get());
+        im.ImGui_TextUnformatted(S.tr().convertArchives);
         const top = im.ImGui_GetCursorPosY();
         if (im.ImGui_BeginListBox("##convert_list", .{ .x = 430 * s, .y = 140 * s })) {
             const ctrl = im.ImGui_GetIO().*.KeyCtrl;
@@ -110,10 +110,9 @@ pub const Convert = struct {
         const after = im.ImGui_GetCursorPosY();
         const bx = im.ImGui_GetCursorPosX() + 438 * s;
         im.ImGui_SetCursorPos(.{ .x = bx, .y = top });
-        var bb: [128]u8 = undefined;
-        if (im.ImGui_ButtonEx(D.lbl(&bb, S.addFiles.get(), "convert_add").ptr, .{ .x = 98 * s, .y = 0 })) f.browseAdd(d);
+        if (D.buttonMin(S.tr().addFiles, "convert_add", 98)) f.browseAdd(d);
         im.ImGui_SetCursorPosX(bx);
-        if (im.ImGui_ButtonEx(D.lbl(&bb, S.remove.get(), "convert_remove").ptr, .{ .x = 98 * s, .y = 0 })) {
+        if (D.buttonMin(S.tr().remove, "convert_remove", 98)) {
             var i = f.list.items.len;
             while (i > 0) {
                 i -= 1;
@@ -124,35 +123,35 @@ pub const Convert = struct {
         }
         im.ImGui_SetCursorPosY(after + 8 * s);
 
-        D.caption(S.format.get(), 74);
+        const cap = D.capWidth(74, &.{S.tr().format});
+        D.caption(S.tr().format, cap);
         _ = D.combo("convert_format", f.names[0..f.kinds_n], &f.format, 110);
-        im.ImGui_SameLineEx((74 + 128) * s, -1);
-        D.caption(S.level.get(), 0);
-        im.ImGui_SameLineEx((74 + 128 + 64) * s, -1);
+        D.sameLineAt(cap + 128);
+        D.caption(S.tr().level, cap + 128 + D.capWidth(64, &.{S.tr().level}));
         const levels = S.levels();
         var lnames: [6][]const u8 = undefined;
         for (levels, 0..) |l, i| lnames[i] = l;
-        _ = D.combo("convert_level", &lnames, &f.level, 160);
+        _ = D.combo("convert_level", &lnames, &f.level, D.comboWidth(160, &lnames));
 
-        im.ImGui_TextUnformatted(S.convertFolder.get());
-        _ = D.inputHint("convert_folder", S.nextToOriginals.get(), &f.folder, 430);
+        im.ImGui_TextUnformatted(S.tr().convertFolder);
+        _ = D.inputHint("convert_folder", S.tr().nextToOriginals, &f.folder, 430);
         im.ImGui_SameLine();
-        if (im.ImGui_ButtonEx(D.lbl(&bb, S.browse.get(), "convert_browse").ptr, .{ .x = 98 * s, .y = 0 })) {
-            if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .title = S.convertFolder.get(), .folder = D.bufText(&f.folder) }) catch null) |p| {
+        if (D.buttonMin(S.tr().browse, "convert_browse", 98)) {
+            if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .title = S.tr().convertFolder, .folder = D.bufText(&f.folder) }) catch null) |p| {
                 defer f.gpa.free(p);
                 D.setText(&f.folder, p);
             }
         }
-        _ = D.checkbox(S.keepIfNotSmaller.get(), "convert_keep", &f.keep_if_not_smaller);
-        _ = D.checkbox(S.deleteOriginals.get(), "convert_delete", &f.delete_originals);
-        _ = D.checkbox(S.skipEncrypted.get(), "convert_skip_encrypted", &f.skip_encrypted);
+        _ = D.checkbox(S.tr().keepIfNotSmaller, "convert_keep", &f.keep_if_not_smaller);
+        _ = D.checkbox(S.tr().deleteOriginals, "convert_delete", &f.delete_originals);
+        _ = D.checkbox(S.tr().skipEncrypted, "convert_skip_encrypted", &f.skip_encrypted);
 
         im.ImGui_Dummy(.{ .x = 0, .y = 6 * s });
-        D.alignRight(&.{ S.convertButton.get(), S.cancel.get() });
+        D.alignRight(&.{ S.tr().convertButton, S.tr().cancel });
         const busy = f.state != .idle;
-        if (D.primary(!busy, S.convertButton.get(), "convert_go") or (!busy and D.enterPressed() and !im.ImGui_IsAnyItemActive())) f.go(d);
+        if (D.primary(!busy, S.tr().convertButton, "convert_go") or (!busy and D.enterPressed() and !im.ImGui_IsAnyItemActive())) f.go(d);
         im.ImGui_SameLine();
-        if (D.buttonOn(!busy, S.cancel.get(), "convert_cancel") or (!busy and D.escPressed())) return false;
+        if (D.buttonOn(!busy, S.tr().cancel, "convert_cancel") or (!busy and D.escPressed())) return false;
         return true;
     }
 
@@ -165,15 +164,15 @@ pub const Convert = struct {
             spec.appendSlice(f.gpa, e) catch {};
         }
         const files = (kit.win.openFiles(f.gpa, D.owner(d), true, .{ .filters = &.{
-            .{ .name = S.archives.get(), .spec = spec.items },
-            .{ .name = S.allFiles.get(), .spec = "*.*" },
+            .{ .name = S.tr().archives, .spec = spec.items },
+            .{ .name = S.tr().allFiles, .spec = "*.*" },
         } }) catch null) orelse return;
         defer kit.win.freeList(f.gpa, files);
         f.addArchives(@ptrCast(files));
     }
 
     fn go(f: *Convert, d: *Dialogs) void {
-        if (f.list.items.len == 0) return P.message(d, .info, S.app, S.noInputs.get(), .ok, false, null);
+        if (f.list.items.len == 0) return P.message(d, .info, S.app, S.tr().noInputs, .ok, false, null);
         _ = f.arena.reset(.free_all);
         f.jobs = .empty;
         f.errors = .empty;
@@ -186,7 +185,7 @@ pub const Convert = struct {
         f.keep_value = f.keep_if_not_smaller;
         f.out_folder = a.dupe(u8, std.mem.trim(u8, D.bufText(&f.folder), " \t")) catch return;
         if (f.out_folder.len > 0 and !engine.dirExists(f.out_folder))
-            std.Io.Dir.cwd().createDirPath(d.ctx.io, f.out_folder) catch |e| return P.message(d, .err, S.@"error".get(), engine.friendly(e, null), .ok, false, null);
+            std.Io.Dir.cwd().createDirPath(d.ctx.io, f.out_folder) catch |e| return P.message(d, .err, S.tr().@"error", engine.friendly(e, null), .ok, false, null);
         f.delete = f.delete_originals;
         f.i = 0;
         f.skipped = 0;
@@ -287,7 +286,7 @@ pub const Convert = struct {
 
     fn startRun(f: *Convert, d: *Dialogs) void {
         f.state = .running;
-        f.run.start(d, S.converting.get(), f, work, true);
+        f.run.start(d, S.tr().converting, f, work, true);
     }
 
     /// One archive's share of the overall bar, with its name in front of the file being worked on.
@@ -304,7 +303,7 @@ pub const Convert = struct {
         fn report(ctx: ?*anyopaque, percent: u8, file: []const u8) void {
             const sl: *const Slice = @ptrCast(@alignCast(ctx));
             var buf: [1200]u8 = undefined;
-            const text = (if (file.len > 0) std.mem.print(&buf, "{s}: {s}", .{ sl.name, file[0..@min(file.len, 900)] }) else std.mem.print(&buf, "{s}", .{sl.name})) catch sl.name;
+            const text: []const u8 = if (file.len > 0) S.fillZ(&buf, S.tr().labelValueFmt, .{ sl.name, file[0..@min(file.len, 900)] }) else sl.name;
             sl.to.send(@intCast(sl.lo + percent * (sl.hi - sl.lo) / 100), text);
         }
     };
@@ -320,7 +319,7 @@ pub const Convert = struct {
             var diag: engine.Diag = .{};
             const ok = engine.convert(gpa, io, j.source, j.password, j.target, f.kind, f.level_value, f.keep_value, f.delete, sl.progress(), &diag) catch |e| {
                 if (e == error.Canceled) return e;
-                const msg = f.arena.allocator().print("{s}: {s}", .{ fspath.basename(j.source), engine.friendly(e, &diag) }) catch continue;
+                const msg = S.fill(f.arena.allocator(), S.tr().labelValueFmt, .{ fspath.basename(j.source), engine.friendly(e, &diag) }) catch continue;
                 f.errors.append(f.arena.allocator(), msg) catch {};
                 continue;
             };
@@ -333,13 +332,13 @@ pub const Convert = struct {
         var text: std.ArrayList(u8) = .empty;
         defer text.deinit(f.gpa);
         var buf: [1024]u8 = undefined;
-        text.appendSlice(f.gpa, S.fillZ(&buf, S.convertSummaryFmt.get(), .{ f.converted, f.kept, f.skipped, f.errors.items.len })) catch {};
+        text.appendSlice(f.gpa, S.fillZ(&buf, S.tr().convertSummaryFmt, .{ f.converted, f.kept, f.skipped, f.errors.items.len })) catch {};
         if (f.errors.items.len > 0) text.appendSlice(f.gpa, "\n") catch {};
         for (f.errors.items[0..@min(10, f.errors.items.len)]) |e| {
             text.appendSlice(f.gpa, "\n") catch {};
             text.appendSlice(f.gpa, e) catch {};
         }
-        P.message(d, if (f.errors.items.len > 0) .warning else .info, S.convertTitle.get(), text.items, .ok, false, null);
+        P.message(d, if (f.errors.items.len > 0) .warning else .info, S.tr().convertTitle, text.items, .ok, false, null);
         if (f.errors.items.len == 0) f.done = true;
     }
 

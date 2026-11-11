@@ -18,7 +18,11 @@ var types: std.StringHashMapUnmanaged([]const u8) = .empty;
 var drive_names: std.StringHashMapUnmanaged([]const u8) = .empty;
 
 /// ShellInfo.Of(...).Type: Explorer's type name ("Text Document", "<folder>" fallback), cached per extension.
+/// Explorer names types in the Windows display language: when MakePack is in another one, its own names
+/// ("<folder>", "TXT File") keep the column in one language.
 pub fn typeName(name: []const u8, folder: bool) []const u8 {
+    const lang = kit.i18n.current();
+    if (kit.i18n.fromLangId(w.GetUserDefaultUILanguage()) != lang) return ownType(lang, folder, pw.extension(name));
     const ext = if (folder) "\\folder" else pw.extension(name);
     var kbuf: [64]u8 = undefined;
     const key_src = if (!folder and ext.len == 0) "\\noext" else ext;
@@ -39,8 +43,27 @@ pub fn typeName(name: []const u8, folder: bool) []const u8 {
     return t;
 }
 
+var own_types: std.StringHashMapUnmanaged([]const u8) = .empty;
+
+/// "<folder>" | "TXT File" in `lang` (cached per language and extension: rows keep the slice).
+fn ownType(lang: kit.i18n.Lang, folder: bool, ext: []const u8) []const u8 {
+    if (folder) return S.tr().folderType;
+    const e = std.mem.trimStart(u8, ext, ".");
+    if (e.len == 0) return "";
+    var kbuf: [80]u8 = undefined;
+    if (e.len > 64) return upperExt(e);
+    const key = std.ascii.lowerString(&kbuf, std.mem.print(&kbuf, "{s}:{s}", .{ lang.code(), e }) catch return upperExt(e));
+    if (own_types.get(key)) |t| return t;
+    var ub: [64]u8 = undefined;
+    var tb: [200]u8 = undefined;
+    const t = cache_gpa.dupe(u8, S.fillZ(&tb, S.tr().fileTypeFmt, .{std.ascii.upperString(&ub, e)})) catch return upperExt(e);
+    const k = cache_gpa.dupe(u8, key) catch return t;
+    own_types.put(cache_gpa, k, t) catch {};
+    return t;
+}
+
 fn fallbackType(folder: bool, ext: []const u8) []const u8 {
-    return if (folder) S.folderType.get() else upperExt(ext);
+    return if (folder) S.tr().folderType else upperExt(ext);
 }
 
 /// "TXT" for ".txt" (process-lifetime string).

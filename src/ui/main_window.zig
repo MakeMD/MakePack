@@ -411,51 +411,51 @@ pub const MainWindow = struct {
         if (!im.ImGui_BeginMenuBar()) return;
         defer im.ImGui_EndMenuBar();
         const arc = mw.m.a != null;
-        if (beginMenu(S.mFile, "mfile")) {
-            if (item(S.openArchive, "m_open", "Ctrl+O", true)) mw.doOpen();
-            if (item(S.newArchive, "m_new", "Ctrl+N", true)) mw.ctx.dialogs.compress(&.{}, true);
-            if (item(S.changeDrive, "m_drive", "Ctrl+D", true)) mw.open_drives = true;
+        if (beginMenu(S.tr().mFile, "mfile")) {
+            if (item(S.tr().openArchive, "m_open", "Ctrl+O", true)) mw.doOpen();
+            if (item(S.tr().newArchive, "m_new", "Ctrl+N", true)) mw.ctx.dialogs.compress(&.{}, true);
+            if (item(S.tr().changeDrive, "m_drive", "Ctrl+D", true)) mw.open_drives = true;
             im.ImGui_Separator();
-            if (item(S.copyFiles, "m_copy", "Ctrl+C", true)) mw.copyFiles();
-            if (item(S.pasteFiles, "m_paste", "Ctrl+V", true)) mw.pasteFiles();
-            if (item(S.copyNames, "m_names", null, true)) mw.copyNames();
+            if (item(S.tr().copyFiles, "m_copy", "Ctrl+C", true)) mw.copyFiles();
+            if (item(S.tr().pasteFiles, "m_paste", "Ctrl+V", true)) mw.pasteFiles();
+            if (item(S.tr().copyNames, "m_names", null, true)) mw.copyNames();
             im.ImGui_Separator();
-            if (item(S.selectAllItems, "m_selall", "Ctrl+A", true)) mw.m.selectAll();
-            if (item(S.selectGroup, "m_selgroup", "Num +", true)) mw.selectGroup(true);
-            if (item(S.deselectGroup, "m_deselgroup", "Num \u{2212}", true)) mw.selectGroup(false);
-            if (item(S.invertSelection, "m_invert", "Num *", true)) mw.m.invert();
+            if (item(S.tr().selectAllItems, "m_selall", "Ctrl+A", true)) mw.m.selectAll();
+            if (item(S.tr().selectGroup, "m_selgroup", "Num +", true)) mw.selectGroup(true);
+            if (item(S.tr().deselectGroup, "m_deselgroup", "Num \u{2212}", true)) mw.selectGroup(false);
+            if (item(S.tr().invertSelection, "m_invert", "Num *", true)) mw.m.invert();
             im.ImGui_Separator();
-            if (item(S.exit, "m_exit", null, true)) mw.closed = true;
+            if (item(S.tr().exit, "m_exit", null, true)) mw.closed = true;
             im.ImGui_EndMenu();
         }
-        if (beginMenu(S.mCommands, "mcommands")) {
-            if (item(S.addCmd, "m_add", "Alt+A", true)) mw.doAdd();
-            if (item(S.extractTo, "m_extract", "Alt+E", true)) mw.doExtract();
-            if (item(S.testCmd, "m_test", "Alt+T", true)) mw.doTest();
+        if (beginMenu(S.tr().mCommands, "mcommands")) {
+            if (item(S.tr().addCmd, "m_add", "Alt+A", true)) mw.doAdd();
+            if (item(S.tr().extractTo, "m_extract", "Alt+E", true)) mw.doExtract();
+            if (item(S.tr().testCmd, "m_test", "Alt+T", true)) mw.doTest();
             im.ImGui_Separator();
-            if (item(S.viewCmd, "m_view", "Alt+V", true)) mw.doView();
-            if (item(S.deleteCmd, "m_delete", "Del", true)) mw.doDelete(false);
-            if (item(S.rename, "m_rename", "F2", true)) mw.beginRename();
+            if (item(S.tr().viewCmd, "m_view", "Alt+V", true)) mw.doView();
+            if (item(S.tr().deleteCmd, "m_delete", "Del", true)) mw.doDelete(false);
+            if (item(S.tr().rename, "m_rename", "F2", true)) mw.beginRename();
             im.ImGui_Separator();
-            if (item(S.extractNoAsk, "m_extractnoask", "Alt+W", true)) mw.doExtractNoAsk();
+            if (item(S.tr().extractNoAsk, "m_extractnoask", "Alt+W", true)) mw.doExtractNoAsk();
             im.ImGui_EndMenu();
         }
-        if (beginMenu(S.mTools, "mtools")) {
-            if (item(S.convertMenu, "m_convert", "Alt+Q", true)) mw.doConvert();
+        if (beginMenu(S.tr().mTools, "mtools")) {
+            if (item(S.tr().convertMenu, "m_convert", "Alt+Q", true)) mw.doConvert();
             im.ImGui_Separator();
-            if (item(S.findCmd, "m_find", "F3", true)) mw.doFind();
-            if (item(S.infoCmd, "m_info", "Alt+I", true)) mw.doInfo();
-            if (beginMenuEx(S.reportMenu, "m_report", arc)) {
+            if (item(S.tr().findCmd, "m_find", "F3", true)) mw.doFind();
+            if (item(S.tr().infoCmd, "m_info", "Alt+I", true)) mw.doInfo();
+            if (beginMenuEx(S.tr().reportMenu, "m_report", arc)) {
                 mw.reportItems(true);
                 im.ImGui_EndMenu();
             }
             im.ImGui_EndMenu();
         }
-        if (beginMenu(S.mFavorites, "mfavorites")) {
+        if (beginMenu(S.tr().mFavorites, "mfavorites")) {
             menu_gutter = true;
             defer menu_gutter = false;
-            if (iconItem(.favorite, S.addFavorite, "m_addfav", "Ctrl+F")) mw.beginAddFavorite();
-            if (item(S.organizeFavorites, "m_orgfav", null, true)) mw.ctx.dialogs.organizeFavorites();
+            if (iconItem(.favorite, S.tr().addFavorite, "m_addfav", "Ctrl+F")) mw.beginAddFavorite();
+            if (item(S.tr().organizeFavorites, "m_orgfav", null, true)) mw.ctx.dialogs.organizeFavorites();
             const favs = settings.current().Favorites;
             if (favs.len > 0) im.ImGui_Separator();
             for (favs, 0..) |f, i| {
@@ -470,50 +470,50 @@ pub const MainWindow = struct {
             }
             im.ImGui_EndMenu();
         }
-        if (beginMenu(S.mOptions, "moptions")) {
-            if (item(S.settingsMenu, "m_settings", "Ctrl+S", true)) mw.ctx.dialogs.settings();
-            if (item(S.assoc, "m_assoc", null, true)) mw.ctx.dialogs.assoc();
+        if (beginMenu(S.tr().mOptions, "moptions")) {
+            if (item(S.tr().settingsMenu, "m_settings", "Ctrl+S", true)) mw.ctx.dialogs.settings();
+            if (item(S.tr().assoc, "m_assoc", null, true)) mw.ctx.dialogs.assoc();
             im.ImGui_Separator();
-            if (beginMenuEx(S.fileListMenu, "m_filelist", true)) {
-                if (checkItem(S.flatView, "m_flat", "Ctrl+H", mw.m.flat, arc)) mw.toggleFlat();
+            if (beginMenuEx(S.tr().fileListMenu, "m_filelist", true)) {
+                if (checkItem(S.tr().flatView, "m_flat", "Ctrl+H", mw.m.flat, arc)) mw.toggleFlat();
                 im.ImGui_Separator();
-                if (checkItem(S.listMode, "m_list", null, mw.list_mode, true)) mw.setListMode(true);
-                if (checkItem(S.detailsMode, "m_details", null, !mw.list_mode, true)) mw.setListMode(false);
+                if (checkItem(S.tr().listMode, "m_list", null, mw.list_mode, true)) mw.setListMode(true);
+                if (checkItem(S.tr().detailsMode, "m_details", null, !mw.list_mode, true)) mw.setListMode(false);
                 im.ImGui_EndMenu();
             }
-            if (checkItem(S.folderTree, "m_tree", "Ctrl+T", mw.show_tree, true)) mw.toggleTree();
+            if (checkItem(S.tr().folderTree, "m_tree", "Ctrl+T", mw.show_tree, true)) mw.toggleTree();
             im.ImGui_EndMenu();
         }
-        if (beginMenu(S.mHelp, "mhelp")) {
-            if (item(S.about, "m_about", null, true)) {
+        if (beginMenu(S.tr().mHelp, "mhelp")) {
+            if (item(S.tr().about, "m_about", null, true)) {
                 var b: [512]u8 = undefined;
-                const text = std.mem.print(&b, "{s} {s}\n\n{s}", .{ S.app, version, S.aboutText.get() }) catch S.app;
-                mw.ctx.dialogs.alert(.info, S.about.get(), text);
+                const text = std.mem.print(&b, "{s} {s}\n\n{s}", .{ S.app, version, S.tr().aboutText }) catch S.app;
+                mw.ctx.dialogs.alert(.info, S.tr().about, text);
             }
             im.ImGui_EndMenu();
         }
     }
 
     fn reportItems(mw: *MainWindow, keys: bool) void {
-        if (item(S.reportHtml, "rep_html", if (keys) "Alt+G" else null, true)) mw.saveReport(true);
-        if (item(S.reportTxt, "rep_txt", null, true)) mw.saveReport(false);
-        if (item(S.reportCopy, "rep_copy", null, true)) mw.copyReport();
+        if (item(S.tr().reportHtml, "rep_html", if (keys) "Alt+G" else null, true)) mw.saveReport(true);
+        if (item(S.tr().reportTxt, "rep_txt", null, true)) mw.saveReport(false);
+        if (item(S.tr().reportCopy, "rep_copy", null, true)) mw.copyReport();
     }
 
     // ---- toolbar: 32 px pictures with the label under them, a set per mode ---------------------------------
 
     /// Item id ###tb_<id>. Pictures with distinct silhouettes (the four box icons looked alike at toolbar size).
-    const Tool = struct { id: []const u8, icon: kit.icons.Name, text: S.Str, tip: S.Str, key: []const u8, archive_only: bool = false };
+    const Tool = struct { id: []const u8, icon: kit.icons.Name, text: S.Key, tip: S.Key, key: []const u8, archive_only: bool = false };
     const tools = [_]Tool{
-        .{ .id = "add", .icon = .pack, .text = S.tbAdd, .tip = S.addCmd, .key = "Alt+A" },
-        .{ .id = "extract", .icon = .extract, .text = S.tbExtract, .tip = S.extractTo, .key = "Alt+E" },
-        .{ .id = "test", .icon = .ok, .text = S.tbTest, .tip = S.testCmd, .key = "Alt+T" },
-        .{ .id = "view", .icon = .view, .text = S.tbView, .tip = S.viewCmd, .key = "Alt+V" },
-        .{ .id = "delete", .icon = .delete, .text = S.tbDelete, .tip = S.deleteCmd, .key = "Del" },
-        .{ .id = "find", .icon = .find, .text = S.tbFind, .tip = S.findCmd, .key = "F3" },
-        .{ .id = "info", .icon = .info, .text = S.tbInfo, .tip = S.infoCmd, .key = "Alt+I" },
-        .{ .id = "convert", .icon = .refresh, .text = S.tbConvert, .tip = S.convertMenu, .key = "Alt+Q" },
-        .{ .id = "report", .icon = .report, .text = S.tbReport, .tip = S.reportMenu, .key = "", .archive_only = true },
+        .{ .id = "add", .icon = .pack, .text = .tbAdd, .tip = .addCmd, .key = "Alt+A" },
+        .{ .id = "extract", .icon = .extract, .text = .tbExtract, .tip = .extractTo, .key = "Alt+E" },
+        .{ .id = "test", .icon = .ok, .text = .tbTest, .tip = .testCmd, .key = "Alt+T" },
+        .{ .id = "view", .icon = .view, .text = .tbView, .tip = .viewCmd, .key = "Alt+V" },
+        .{ .id = "delete", .icon = .delete, .text = .tbDelete, .tip = .deleteCmd, .key = "Del" },
+        .{ .id = "find", .icon = .find, .text = .tbFind, .tip = .findCmd, .key = "F3" },
+        .{ .id = "info", .icon = .info, .text = .tbInfo, .tip = .infoCmd, .key = "Alt+I" },
+        .{ .id = "convert", .icon = .refresh, .text = .tbConvert, .tip = .convertMenu, .key = "Alt+Q" },
+        .{ .id = "report", .icon = .report, .text = .tbReport, .tip = .reportMenu, .key = "", .archive_only = true },
     };
 
     fn toolbar(mw: *MainWindow) void {
@@ -532,10 +532,10 @@ pub const MainWindow = struct {
                 im.ImGui_SameLineEx(0, 2 * s);
             }
             var lb: [128]u8 = undefined;
-            const text = t.text.get();
+            const text = S.get(t.text);
             const label = std.mem.printSentinel(&lb, "{s}###tb_{s}", .{ text, t.id }, 0) catch continue;
             const tw = im.ImGui_CalcTextSize(text.ptr).x;
-            const bw = @max(tw, icon) + 12 * s;
+            const bw = @max(tw, icon) + 16 * s; // 8 px of highlight either side of a long label ("Hinzufügen")
             const p = im.ImGui_GetCursorScreenPos();
             const clicked = im.ImGui_InvisibleButton(label.ptr, .{ .x = bw, .y = h }, 0);
             const dl = im.ImGui_GetWindowDrawList();
@@ -548,7 +548,7 @@ pub const MainWindow = struct {
             if (kit.icons.get(t.icon, 32)) |tex| im.ImDrawList_AddImage(dl, tex, .{ .x = ix, .y = iy }, .{ .x = ix + icon, .y = iy + icon });
             im.ImDrawList_AddText(dl, .{ .x = p.x + (bw - tw) / 2, .y = p.y + 4 * s + icon }, im.ImGui_GetColorU32(im.ImGuiCol_Text), text.ptr);
             var pb: [96]u8 = undefined;
-            if (t.key.len > 0) tooltip("{s} ({s})", .{ S.plain(&pb, t.tip.get()), t.key }) else tooltip("{s}", .{t.tip.get()});
+            if (t.key.len > 0) tooltip("{s} ({s})", .{ S.plain(&pb, S.get(t.tip)), t.key }) else tooltip("{s}", .{S.get(t.tip)});
             if (clicked) mw.toolClicked(i);
         }
         if (im.ImGui_BeginPopup("##report_menu", 0)) {
@@ -576,7 +576,7 @@ pub const MainWindow = struct {
     fn addressBar(mw: *MainWindow) void {
         const s = mw.scale();
         const up_clicked = kit.ui.iconButton("up", .up, 16, null);
-        tooltip("{s} (Backspace)", .{S.up.get()});
+        tooltip("{s} (Backspace)", .{S.tr().up});
         if (up_clicked) mw.nav(mw.m.up());
         im.ImGui_SameLineEx(0, 4 * s);
         if (!mw.address_active) {
@@ -1044,7 +1044,7 @@ pub const MainWindow = struct {
         if (mw.m.a != null and mw.m.encrypted) {
             im.ImGui_SameLine();
             lineIcon(.lock, im.ImGui_GetFrameHeight());
-            im.ImGui_SetItemTooltipUnformatted(S.encrypted.get().ptr);
+            im.ImGui_SetItemTooltipUnformatted(S.tr().encrypted.ptr);
         }
         var sb: [512]u8 = undefined;
         const text = mw.m.statusText(&sb);
@@ -1074,29 +1074,29 @@ pub const MainWindow = struct {
             any_file = true;
         };
         im.ImGui_PushFontFloat(mw.ctx.app.fonts.bold, 0);
-        const open_it = item(S.openCmd, "c_open", "Enter", one != null);
+        const open_it = item(S.tr().openCmd, "c_open", "Enter", one != null);
         im.ImGui_PopFont();
         if (open_it) if (m.oneSelected()) |i| mw.act(m.activate(i, false));
-        if (item(S.showContents, "c_contents", "Ctrl+PgDn", one != null and !one.?.folder)) if (m.oneSelected()) |i| mw.act(m.activate(i, true));
-        if (item(S.viewCmd, "c_view", "Alt+V", one != null and !one.?.folder)) mw.doView();
+        if (item(S.tr().showContents, "c_contents", "Ctrl+PgDn", one != null and !one.?.folder)) if (m.oneSelected()) |i| mw.act(m.activate(i, true));
+        if (item(S.tr().viewCmd, "c_view", "Alt+V", one != null and !one.?.folder)) mw.doView();
         im.ImGui_Separator();
-        if (item(S.addCmd, "c_add", "Alt+A", arc or n > 0)) mw.doAdd();
-        if (item(S.extractTo, "c_extract", "Alt+E", arc or any_file)) mw.doExtract();
-        if (item(S.testCmd, "c_test", "Alt+T", arc or any_file)) mw.doTest();
+        if (item(S.tr().addCmd, "c_add", "Alt+A", arc or n > 0)) mw.doAdd();
+        if (item(S.tr().extractTo, "c_extract", "Alt+E", arc or any_file)) mw.doExtract();
+        if (item(S.tr().testCmd, "c_test", "Alt+T", arc or any_file)) mw.doTest();
         im.ImGui_Separator();
-        if (item(S.copyFiles, "c_copy", "Ctrl+C", n > 0)) mw.copyFiles();
-        if (item(S.pasteFiles, "c_paste", "Ctrl+V", shell.hasFiles() and (!arc or m.editable))) mw.pasteFiles();
+        if (item(S.tr().copyFiles, "c_copy", "Ctrl+C", n > 0)) mw.copyFiles();
+        if (item(S.tr().pasteFiles, "c_paste", "Ctrl+V", shell.hasFiles() and (!arc or m.editable))) mw.pasteFiles();
         im.ImGui_Separator();
-        if (!arc and item(S.newFolder, "c_newfolder", null, true)) mw.newFolder();
-        if (item(S.rename, "c_rename", "F2", one != null and (!arc or m.editable))) mw.beginRename();
-        if (item(S.delete, "c_delete", "Del", n > 0 and (!arc or m.editable))) mw.doDelete(false);
+        if (!arc and item(S.tr().newFolder, "c_newfolder", null, true)) mw.newFolder();
+        if (item(S.tr().rename, "c_rename", "F2", one != null and (!arc or m.editable))) mw.beginRename();
+        if (item(S.tr().delete, "c_delete", "Del", n > 0 and (!arc or m.editable))) mw.doDelete(false);
         im.ImGui_Separator();
-        if (beginMenuEx(S.viewAs, "c_viewas", true)) {
-            if (checkItem(S.listMode, "c_list", null, mw.list_mode, true)) mw.setListMode(true);
-            if (checkItem(S.detailsMode, "c_details", null, !mw.list_mode, true)) mw.setListMode(false);
+        if (beginMenuEx(S.tr().viewAs, "c_viewas", true)) {
+            if (checkItem(S.tr().listMode, "c_list", null, mw.list_mode, true)) mw.setListMode(true);
+            if (checkItem(S.tr().detailsMode, "c_details", null, !mw.list_mode, true)) mw.setListMode(false);
             im.ImGui_EndMenu();
         }
-        if (beginMenuEx(S.sortBy, "c_sortby", true)) {
+        if (beginMenuEx(S.tr().sortBy, "c_sortby", true)) {
             for (m.cols) |c| {
                 var lb: [64]u8 = undefined;
                 const label = std.mem.printSentinel(&lb, "{s}###c_sort_{t}", .{ colTitle(c), c }, 0) catch continue;
@@ -1107,7 +1107,7 @@ pub const MainWindow = struct {
             }
             im.ImGui_EndMenu();
         }
-        if (item(if (arc) S.infoCmd else S.propertiesCmd, "c_info", "Alt+I", true)) mw.doInfo();
+        if (item(if (arc) S.tr().infoCmd else S.tr().propertiesCmd, "c_info", "Alt+I", true)) mw.doInfo();
     }
 
     // ---- keys -------------------------------------------------------------------------------------------------
@@ -1184,10 +1184,10 @@ pub const MainWindow = struct {
             error.NotFound => {
                 var b: [2200]u8 = undefined;
                 const path = if (mw.m.want) |x| x.saved.loc.path else "";
-                d.alert(.err, S.app, S.fillZ(&b, S.pathNotFoundFmt.get(), .{path}));
+                d.alert(.err, S.app, S.fillZ(&b, S.tr().pathNotFoundFmt, .{path}));
                 mw.m.clearWant();
             },
-            else => d.alert(.err, S.@"error".get(), engine.friendly(e, null)),
+            else => d.alert(.err, S.tr().@"error", engine.friendly(e, null)),
         }
     }
 
@@ -1195,7 +1195,7 @@ pub const MainWindow = struct {
         const a = r catch |e| return mw.navError(e);
         switch (a) {
             .none => {},
-            .shell => |p| shell.open(mw.ctx.gpa, p) catch |e| mw.ctx.dialogs.alert(.err, S.@"error".get(), engine.friendly(e, null)),
+            .shell => |p| shell.open(mw.ctx.gpa, p) catch |e| mw.ctx.dialogs.alert(.err, S.tr().@"error", engine.friendly(e, null)),
             .extract => |x| {
                 const arc = mw.m.a orelse return;
                 const rel = mw.ctx.dupe(x.rel) catch return;
@@ -1211,8 +1211,8 @@ pub const MainWindow = struct {
         return mw.next_token;
     }
 
-    fn say(mw: *MainWindow, text: S.Str) void {
-        mw.ctx.dialogs.alert(.info, S.app, text.get());
+    fn say(mw: *MainWindow, text: [:0]const u8) void {
+        mw.ctx.dialogs.alert(.info, S.app, text);
     }
 
     // ---- commands ---------------------------------------------------------------------------------------------
@@ -1221,10 +1221,10 @@ pub const MainWindow = struct {
         const gpa = mw.ctx.gpa;
         var tb: [64]u8 = undefined;
         const filters = [_]kit.win.Filter{
-            .{ .name = S.archives.get(), .spec = "*.7z;*.zip;*.rar;*.tar;*.gz;*.tgz;*.bz2;*.tbz2;*.xz;*.txz;*.wim;*.iso;*.cab;*.lzh;*.arj;*.cpio;*.rpm;*.deb;*.msi;*.chm;*.dmg;*.vhd;*.001" },
-            .{ .name = S.allFiles.get(), .spec = "*.*" },
+            .{ .name = S.tr().archives, .spec = "*.7z;*.zip;*.rar;*.tar;*.gz;*.tgz;*.bz2;*.tbz2;*.xz;*.txz;*.wim;*.iso;*.cab;*.lzh;*.arj;*.cpio;*.rpm;*.deb;*.msi;*.chm;*.dmg;*.vhd;*.001" },
+            .{ .name = S.tr().allFiles, .spec = "*.*" },
         };
-        const r = kit.win.openFiles(gpa, mw.ctx.app.hwnd, false, .{ .title = noDots(S.plain(&tb, S.open.get())), .filters = &filters, .folder = mw.m.dir }) catch return;
+        const r = kit.win.openFiles(gpa, mw.ctx.app.hwnd, false, .{ .title = noDots(S.plain(&tb, S.tr().open)), .filters = &filters, .folder = mw.m.dir }) catch return;
         const list = r orelse return;
         defer kit.win.freeList(gpa, list);
         if (list.len > 0) mw.open(list[0]);
@@ -1236,7 +1236,7 @@ pub const MainWindow = struct {
         if (mw.m.a) |a| {
             var tb: [64]u8 = undefined;
             // ponytail: files only here - folders come in by drag and drop or Ctrl+V (a folder picker is the upgrade path).
-            const r = kit.win.openFiles(gpa, mw.ctx.app.hwnd, true, .{ .title = noDots(S.plain(&tb, S.addFilesToArchive.get())), .filters = &.{.{ .name = S.allFiles.get(), .spec = "*.*" }} }) catch return;
+            const r = kit.win.openFiles(gpa, mw.ctx.app.hwnd, true, .{ .title = noDots(S.plain(&tb, S.tr().addFilesToArchive)), .filters = &.{.{ .name = S.tr().allFiles, .spec = "*.*" }} }) catch return;
             const list = r orelse return;
             defer kit.win.freeList(gpa, list);
             if (list.len > 0) mw.ctx.dialogs.addToArchive(a, @ptrCast(list), mw.m.cur, mw.m.editable);
@@ -1245,7 +1245,7 @@ pub const MainWindow = struct {
         var arena: std.heap.ArenaAllocator = .init(gpa);
         defer arena.deinit();
         const paths = mw.m.selectedPaths(arena.allocator(), false) catch return;
-        if (paths.len == 0) return mw.say(S.nothingSelected);
+        if (paths.len == 0) return mw.say(S.tr().nothingSelected);
         const args = arena.allocator().alloc([]const u8, paths.len + 1) catch return;
         args[0] = "a";
         @memcpy(args[1..], paths);
@@ -1255,7 +1255,7 @@ pub const MainWindow = struct {
     /// The selected archives on disk; a message (and an empty list) when there are none.
     fn selectedArchives(mw: *MainWindow, ar: Allocator) [][]const u8 {
         const files = mw.m.selectedPaths(ar, true) catch return &.{};
-        if (files.len == 0) mw.say(if (mw.m.anySelected()) S.noArchivesSelected else S.nothingSelected);
+        if (files.len == 0) mw.say(if (mw.m.anySelected()) S.tr().noArchivesSelected else S.tr().nothingSelected);
         return files;
     }
 
@@ -1303,7 +1303,7 @@ pub const MainWindow = struct {
     /// Alt+V: the internal viewer for a file; a folder is simply entered.
     fn doView(mw: *MainWindow) void {
         const m = &mw.m;
-        const i = m.oneSelected() orelse return mw.say(S.nothingSelected);
+        const i = m.oneSelected() orelse return mw.say(S.tr().nothingSelected);
         const r = m.rows.items[i];
         if (r.folder) return mw.act(m.activate(i, false));
         if (m.a) |a| return mw.ctx.dialogs.viewEntry(a, r.entry orelse return, r.name);
@@ -1318,7 +1318,7 @@ pub const MainWindow = struct {
         if (mw.m.a) |a| {
             const indices = (mw.m.selected(ar) catch return) orelse return;
             if (indices.len == 0) return;
-            if (!mw.m.editable) return mw.say(S.notSupported);
+            if (!mw.m.editable) return mw.say(S.tr().notSupported);
             return mw.ctx.dialogs.deleteEntries(a, indices, mw.m.selectedCount(), mw.m.cur);
         }
         const paths = mw.m.selectedPaths(ar, false) catch return;
@@ -1347,15 +1347,15 @@ pub const MainWindow = struct {
     fn copyReport(mw: *MainWindow) void {
         const a = mw.m.a orelse return;
         const gpa = mw.ctx.gpa;
-        const text = engine.report(gpa, mw.ctx.io, a, false) catch |e| return mw.ctx.dialogs.alert(.err, S.@"error".get(), engine.friendly(e, null));
+        const text = engine.report(gpa, mw.ctx.io, a, false) catch |e| return mw.ctx.dialogs.alert(.err, S.tr().@"error", engine.friendly(e, null));
         defer gpa.free(text);
-        if (shell.setText(gpa, mw.ctx.app.hwnd, text)) mw.m.setMessage(S.reportCopied.get());
+        if (shell.setText(gpa, mw.ctx.app.hwnd, text)) mw.m.setMessage(S.tr().reportCopied);
     }
 
     /// Convert the selected archives (on disk) or the open one - closed while converting, reopened after.
     fn doConvert(mw: *MainWindow) void {
         if (mw.m.a) |a| {
-            if (mw.m.parents.len > 0) return mw.say(S.notSupported);
+            if (mw.m.parents.len > 0) return mw.say(S.tr().notSupported);
             return mw.ctx.dialogs.convert(&.{a.source}, true);
         }
         var arena: std.heap.ArenaAllocator = .init(mw.ctx.gpa);
@@ -1389,7 +1389,7 @@ pub const MainWindow = struct {
         var tb: [128]u8 = undefined;
         const t = mw.token();
         mw.pending.put(mw.ctx.gpa, t, .{ .mask = on }) catch return;
-        mw.ctx.dialogs.nameLine(noDots(S.plain(&tb, (if (on) S.selectGroup else S.deselectGroup).get())), S.maskPrompt.get(), mw.mask, t);
+        mw.ctx.dialogs.nameLine(noDots(S.plain(&tb, (if (on) S.tr().selectGroup else S.tr().deselectGroup))), S.tr().maskPrompt, mw.mask, t);
     }
 
     // ---- rename / new folder -------------------------------------------------------------------------------
@@ -1439,14 +1439,14 @@ pub const MainWindow = struct {
 
     fn doRename(mw: *MainWindow, old: []const u8, name: []const u8) void {
         const m = &mw.m;
-        m.checkName(old, name) catch |e| return mw.say(if (e == error.BadName) S.badName else S.nameTaken);
+        m.checkName(old, name) catch |e| return mw.say(if (e == error.BadName) S.tr().badName else S.tr().nameTaken);
         const gpa = mw.ctx.gpa;
         if (m.a) |a| return mw.ctx.dialogs.renameEntry(a, m.cur, old, name);
         const from = model.join(gpa, m.dir, old) catch return;
         defer gpa.free(from);
         const to = model.join(gpa, m.dir, name) catch return;
         defer gpa.free(to);
-        shell.rename(gpa, from, to) catch |e| mw.ctx.dialogs.alert(.err, S.@"error".get(), engine.friendly(e, null));
+        shell.rename(gpa, from, to) catch |e| mw.ctx.dialogs.alert(.err, S.tr().@"error", engine.friendly(e, null));
         const keep = gpa.dupe(u8, name) catch return;
         defer gpa.free(keep);
         m.fill(false, keep) catch {};
@@ -1454,7 +1454,7 @@ pub const MainWindow = struct {
     }
 
     fn newFolder(mw: *MainWindow) void {
-        const i = (mw.m.newFolder() catch |e| return mw.ctx.dialogs.alert(.err, S.@"error".get(), engine.friendly(e, null))) orelse return;
+        const i = (mw.m.newFolder() catch |e| return mw.ctx.dialogs.alert(.err, S.tr().@"error", engine.friendly(e, null))) orelse return;
         mw.m.focus = i;
         mw.beginRename();
     }
@@ -1550,7 +1550,7 @@ pub const MainWindow = struct {
             return;
         };
         var tb: [128]u8 = undefined;
-        mw.ctx.dialogs.nameLine(noDots(S.plain(&tb, S.addFavorite.get())), S.favoritePrompt.get(), name, t);
+        mw.ctx.dialogs.nameLine(noDots(S.plain(&tb, S.tr().addFavorite)), S.tr().favoritePrompt, name, t);
     }
 
     fn addFavorite(mw: *MainWindow, name: []const u8, path: []const u8, inner: ?[]const u8) void {
@@ -1607,7 +1607,7 @@ pub const MainWindow = struct {
             const c = j.mw.ctx;
             var diag: engine.Diag = .{};
             engine.extract(c.gpa, c.io, j.a, j.dir, j.indices, .Overwrite, .none, .always_overwrite, settings.current().Motw, .{}, &diag) catch |e| {
-                c.dialogs.alert(.err, S.@"error".get(), engine.friendly(e, &diag));
+                c.dialogs.alert(.err, S.tr().@"error", engine.friendly(e, &diag));
                 return false;
             };
             return true;
@@ -1709,13 +1709,13 @@ pub const MainWindow = struct {
 
 fn colTitle(c: Col) [:0]const u8 {
     return switch (c) {
-        .name => S.name.get(),
-        .size => S.size.get(),
-        .@"packed" => S.@"packed".get(),
-        .type => S.type.get(),
-        .modified => S.modified.get(),
-        .crc => S.crc32.get(),
-        .path => S.pathColumn.get(),
+        .name => S.tr().name,
+        .size => S.tr().size,
+        .@"packed" => S.tr().@"packed",
+        .type => S.tr().type,
+        .modified => S.tr().modified,
+        .crc => S.tr().crc32,
+        .path => S.tr().pathColumn,
     };
 }
 
@@ -1735,25 +1735,25 @@ fn noDots(s: []const u8) []const u8 {
     return if (std.mem.endsWith(u8, s, "\u{2026}")) s[0 .. s.len - "\u{2026}".len] else s;
 }
 
-fn beginMenu(text: S.Str, id: []const u8) bool {
+fn beginMenu(text: [:0]const u8, id: []const u8) bool {
     return beginMenuEx(text, id, true);
 }
 
-fn beginMenuEx(text: S.Str, id: []const u8, enabled: bool) bool {
+fn beginMenuEx(text: [:0]const u8, id: []const u8, enabled: bool) bool {
     var plain: [96]u8 = undefined;
     var label: [128]u8 = undefined;
-    const z = std.mem.printSentinel(&label, "{s}###{s}", .{ S.plain(&plain, text.get()), id }, 0) catch return false;
+    const z = std.mem.printSentinel(&label, "{s}###{s}", .{ S.plain(&plain, text), id }, 0) catch return false;
     return im.ImGui_BeginMenuEx(z.ptr, enabled);
 }
 
-fn item(text: S.Str, id: []const u8, shortcut: ?[*:0]const u8, enabled: bool) bool {
+fn item(text: [:0]const u8, id: []const u8, shortcut: ?[*:0]const u8, enabled: bool) bool {
     return checkItem(text, id, shortcut, false, enabled);
 }
 
-fn checkItem(text: S.Str, id: []const u8, shortcut: ?[*:0]const u8, checked: bool, enabled: bool) bool {
+fn checkItem(text: [:0]const u8, id: []const u8, shortcut: ?[*:0]const u8, checked: bool, enabled: bool) bool {
     var plain: [160]u8 = undefined;
     var label: [200]u8 = undefined;
-    const z = std.mem.printSentinel(&label, "{s}{s}###{s}", .{ gutter(), S.plain(&plain, text.get()), id }, 0) catch return false;
+    const z = std.mem.printSentinel(&label, "{s}{s}###{s}", .{ gutter(), S.plain(&plain, text), id }, 0) catch return false;
     return im.ImGui_MenuItemEx(z.ptr, shortcut, checked, enabled);
 }
 
@@ -1782,7 +1782,7 @@ fn lineIcon(name: kit.icons.Name, h: f32) void {
     drawIcon16(name, p, h);
 }
 
-fn iconItem(icon: kit.icons.Name, text: S.Str, id: []const u8, shortcut: ?[*:0]const u8) bool {
+fn iconItem(icon: kit.icons.Name, text: [:0]const u8, id: []const u8, shortcut: ?[*:0]const u8) bool {
     const p = im.ImGui_GetCursorScreenPos();
     const clicked = item(text, id, shortcut, true);
     drawIcon16(icon, p, im.ImGui_GetItemRectSize().y);

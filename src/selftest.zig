@@ -1326,8 +1326,8 @@ fn shellNew(t: *T) !void {
     t.say("OK shellnew (empty 7z opens, takes files)", .{});
 }
 
-fn label(s: S.Str) []const u8 {
-    return std.mem.trimEnd(u8, s.get(), ":");
+fn label(s: [:0]const u8) []const u8 {
+    return std.mem.trimEnd(u8, s, ":");
 }
 
 fn rows(t: *T, archive: []const u8, password: ?[]const u8) !std.StringHashMapUnmanaged([]const u8) {
@@ -1357,33 +1357,33 @@ fn info(t: *T) !void {
 
     const seven = try Make(t, home, "d64k.7z", .SevenZip, .{ .dictionary = 64 << 10, .filter = "off" });
     var r = try rows(t, seven, null);
-    const m = r.get(label(S.method)) orelse "";
+    const m = r.get(label(S.tr().method)) orelse "";
     try t.must(std.mem.eql(u8, m, "LZMA2:16"), "7z method: {s}", .{m});
-    try t.must(std.mem.eql(u8, r.get(label(S.dictionary)) orelse "", nice(t, 64 << 10)), "7z dictionary: {s}", .{r.get(label(S.dictionary)) orelse "-"});
-    try t.must(std.mem.startsWith(u8, r.get(S.solid.get()) orelse "", S.yes.get()), "7z solid: {s}", .{r.get(S.solid.get()) orelse "-"});
-    try t.must(std.mem.eql(u8, r.get(S.files.get()).?, "4") and std.mem.eql(u8, r.get(S.folders.get()).?, "2"), "7z counts: {s} files, {s} folders", .{ r.get(S.files.get()).?, r.get(S.folders.get()).? });
-    try t.must(std.mem.eql(u8, r.get(S.unpacked.get()).?, nice(t, text_bytes)), "unpacked {s}, expected {s}", .{ r.get(S.unpacked.get()).?, nice(t, text_bytes) });
-    try t.must(std.mem.eql(u8, r.get(S.@"packed".get()).?, nice(t, size(t, seven))), "packed {s}", .{r.get(S.@"packed".get()).?});
-    try t.must(std.mem.eql(u8, r.get(S.encrypted.get()).?, S.no.get()) and r.get(S.volumesCount.get()) == null, "plain 7z: encryption/volumes rows", .{});
+    try t.must(std.mem.eql(u8, r.get(label(S.tr().dictionary)) orelse "", nice(t, 64 << 10)), "7z dictionary: {s}", .{r.get(label(S.tr().dictionary)) orelse "-"});
+    try t.must(std.mem.startsWith(u8, r.get(S.tr().solid) orelse "", S.tr().yes), "7z solid: {s}", .{r.get(S.tr().solid) orelse "-"});
+    try t.must(std.mem.eql(u8, r.get(S.tr().files).?, "4") and std.mem.eql(u8, r.get(S.tr().folders).?, "2"), "7z counts: {s} files, {s} folders", .{ r.get(S.tr().files).?, r.get(S.tr().folders).? });
+    try t.must(std.mem.eql(u8, r.get(S.tr().unpacked).?, nice(t, text_bytes)), "unpacked {s}, expected {s}", .{ r.get(S.tr().unpacked).?, nice(t, text_bytes) });
+    try t.must(std.mem.eql(u8, r.get(S.tr().@"packed").?, nice(t, size(t, seven))), "packed {s}", .{r.get(S.tr().@"packed").?});
+    try t.must(std.mem.eql(u8, r.get(S.tr().encrypted).?, S.tr().no) and r.get(S.tr().volumesCount) == null, "plain 7z: encryption/volumes rows", .{});
 
     const zip = try Make(t, home, "plain.zip", .Zip, .{});
     r = try rows(t, zip, null);
-    try t.must(std.mem.eql(u8, r.get(label(S.method)) orelse "", "Deflate") and r.get(label(S.dictionary)) == null, "zip method/dictionary: {s}", .{r.get(label(S.method)) orelse "-"});
+    try t.must(std.mem.eql(u8, r.get(label(S.tr().method)) orelse "", "Deflate") and r.get(label(S.tr().dictionary)) == null, "zip method/dictionary: {s}", .{r.get(label(S.tr().method)) orelse "-"});
 
     const parts = try Make(t, home, "vol.7z", .SevenZip, .{ .level = .None, .volume_size = 100 << 10 });
     const n = (try namesLike(t, home, "vol.7z.")).len;
     r = try rows(t, try engine.part(t.ar, parts, 1), null);
-    try t.must(n >= 3 and std.mem.eql(u8, r.get(S.volumesCount.get()) orelse "", try t.ar.print("{d}", .{n})), "volume count row: {d} parts, row {s}", .{ n, r.get(S.volumesCount.get()) orelse "-" });
+    try t.must(n >= 3 and std.mem.eql(u8, r.get(S.tr().volumesCount) orelse "", try t.ar.print("{d}", .{n})), "volume count row: {d} parts, row {s}", .{ n, r.get(S.tr().volumesCount) orelse "-" });
 
     const locked = try Make(t, home, "locked.7z", .SevenZip, .{ .password = "hunter2", .encrypt_headers = true });
     r = try rows(t, locked, "hunter2");
-    try t.must(std.mem.eql(u8, r.get(S.encrypted.get()).?, S.encryptedDataAndNames.get()), "7z with encrypted names", .{});
+    try t.must(std.mem.eql(u8, r.get(S.tr().encrypted).?, S.tr().encryptedDataAndNames), "7z with encrypted names", .{});
     const aes = try Make(t, home, "aes.zip", .Zip, .{ .password = "hunter2" });
     r = try rows(t, aes, "hunter2");
-    try t.must(std.mem.eql(u8, r.get(S.encrypted.get()).?, S.encryptedData.get()), "zip with encrypted data only", .{});
+    try t.must(std.mem.eql(u8, r.get(S.tr().encrypted).?, S.tr().encryptedData), "zip with encrypted data only", .{});
     const tgz = try Make(t, home, "t.tar.gz", .TarGz, .{});
     r = try rows(t, tgz, null);
-    try t.must(std.mem.eql(u8, r.get(S.@"packed".get()).?, nice(t, size(t, tgz))), "tar.gz packed size is the inner tar's", .{});
+    try t.must(std.mem.eql(u8, r.get(S.tr().@"packed").?, nice(t, size(t, tgz))), "tar.gz packed size is the inner tar's", .{});
     try t.must(engine.dictionaryOf("PPMD:o6:mem24") == 1 << 24 and engine.dictionaryOf("LZMA:1536m") == 1536 << 20 and
         engine.dictionaryOf("BCJ2 LZMA2:20 LZMA:20:lc0:lp2") == 1 << 20 and engine.dictionaryOf("Deflate") == null, "DictionaryOf", .{});
     t.say("OK info (7z, zip, volumes, encryption, tar.gz, dictionary)", .{});
@@ -1411,8 +1411,8 @@ fn reportCheck(t: *T) !void {
     try t.must(std.mem.startsWith(u8, bytes, "\xEF\xBB\xBF") and bytes.len > 3, "the text report has no UTF-8 BOM", .{});
     const txt = bytes[3..];
     try t.must(std.mem.find(u8, txt, "звіт.txt") != null and std.mem.find(u8, txt, "sub/b.txt") != null and std.mem.find(u8, txt, "R&D.txt") != null, "the text report lacks a file", .{});
-    for ([_][]const u8{ S.files.get(), S.unpacked.get(), S.@"packed".get() }) |l| {
-        const want = try t.ar.print("{s}: {s}", .{ l, inf.get(l).? });
+    for ([_][]const u8{ S.tr().files, S.tr().unpacked, S.tr().@"packed" }) |l| {
+        const want = try S.fill(t.ar, S.tr().labelValueFmt, .{ l, inf.get(l).? });
         try t.must(std.mem.find(u8, txt, want) != null, "text report total '{s}' differs from Info ({s})", .{ l, inf.get(l).? });
     }
     var found = false;
@@ -1843,7 +1843,7 @@ fn guiCheck(t: *T) !void {
     m.flat = false;
     try m.fill(false, null);
     try t.must(eqlS(try guiNames(t, &m), "..|src"), "flat view off: {s}", .{try guiNames(t, &m)});
-    if (S.uk) for ([_]struct { u64, []const u8 }{ .{ 1, "файл" }, .{ 2, "файли" }, .{ 5, "файлів" }, .{ 11, "файлів" }, .{ 12, "файлів" }, .{ 21, "файл" }, .{ 22, "файли" }, .{ 111, "файлів" } }) |c| {
+    if (kit.i18n.current() == .uk) for ([_]struct { u64, []const u8 }{ .{ 1, "файл" }, .{ 2, "файли" }, .{ 5, "файлів" }, .{ 11, "файлів" }, .{ 12, "файлів" }, .{ 21, "файл" }, .{ 22, "файли" }, .{ 111, "файлів" } }) |c| {
         const n, const word = c;
         const s = S.filesN(&b1, n);
         try t.must(std.mem.endsWith(u8, s, word) and s[s.len - word.len - 1] == ' ', "{d} -> {s}", .{ n, s });

@@ -58,7 +58,7 @@ pub const ProbeResult = enum { not_archive, damaged, archive, encrypted_headers 
 pub const Error = error{
     /// OperationCanceledException - 255 - S.cancelled
     Canceled,
-    /// WarningException - 1 - diag: S.unsafeSkippedFmt (count)
+    /// WarningException - 1 - diag: S.unsafeSkippedN (count)
     UnsafeEntriesSkipped,
     /// InvalidDataException(S.WrongPassword) / SevenZipException "password" - 11
     WrongPassword,
@@ -149,26 +149,26 @@ pub const Diag = struct {
 pub fn friendly(err: anyerror, diag: ?*const Diag) []const u8 {
     if (diag) |d| if (d.text()) |t| return t;
     return switch (err) {
-        error.Canceled => S.cancelled.get(),
-        error.WrongPassword => S.wrongPassword.get(),
-        error.DataErrorEncrypted => S.dataErrorEncrypted.get(),
-        error.PasswordNeeded => S.passwordNeeded.get(),
-        error.PasswordsDiffer => S.passwordsDiffer.get(),
-        error.Damaged => S.damaged.get(),
-        error.TestAfterFailed => S.testAfterFailed.get(),
-        error.ConvertMismatch => S.convertMismatch.get(),
-        error.UnsupportedMethod => S.unsupportedMethod.get(),
-        error.NotAnArchive => S.notAnArchive.get(),
-        error.PasswordInArgs => S.cliPasswordInArgs.get(),
-        error.NoInputs => S.noInputs.get(),
-        error.SingleFileOnly => S.singleFileOnly.get(),
-        error.ArchiveInsideSources => S.archiveInsideSources.get(),
-        error.NotSupported => S.notSupported.get(),
-        error.ArchiveFailed, error.OperationFailed => S.operationFailed.get(),
+        error.Canceled => S.tr().cancelled,
+        error.WrongPassword => S.tr().wrongPassword,
+        error.DataErrorEncrypted => S.tr().dataErrorEncrypted,
+        error.PasswordNeeded => S.tr().passwordNeeded,
+        error.PasswordsDiffer => S.tr().passwordsDiffer,
+        error.Damaged => S.tr().damaged,
+        error.TestAfterFailed => S.tr().testAfterFailed,
+        error.ConvertMismatch => S.tr().convertMismatch,
+        error.UnsupportedMethod => S.tr().unsupportedMethod,
+        error.NotAnArchive => S.tr().notAnArchive,
+        error.PasswordInArgs => S.tr().cliPasswordInArgs,
+        error.NoInputs => S.tr().noInputs,
+        error.SingleFileOnly => S.tr().singleFileOnly,
+        error.ArchiveInsideSources => S.tr().archiveInsideSources,
+        error.NotSupported => S.tr().notSupported,
+        error.ArchiveFailed, error.OperationFailed => S.tr().operationFailed,
         else => {
             if (winCode(err)) |code| if (sysMessage(&friendly_buf, code)) |m| return m;
             // ponytail: an error std names but Windows has no code for: "operation failed: <name>"
-            return std.mem.print(&friendly_buf, "{s}: {s}", .{ S.operationFailed.get(), @errorName(err) }) catch S.operationFailed.get();
+            return S.fillZ(&friendly_buf, S.tr().labelValueFmt, .{ S.tr().operationFailed, @errorName(err) });
         },
     };
 }
@@ -191,8 +191,8 @@ fn failText(diag: ?*Diag) void {
     const hr: u32 = @bitCast(sevenzip.last_hr);
     var tbuf: [1536]u8 = undefined;
     const msg: []const u8 = sysMessage(&tbuf, hr) orelse (std.mem.print(&tbuf, "0x{X:0>8}", .{hr}) catch "");
-    var fmt: [64]u8 = undefined;
-    Diag.set(diag, std.mem.print(&fmt, "{s}: {{0}}", .{S.operationFailed.get()}) catch "{0}", .{msg});
+    var fmt: [128]u8 = undefined;
+    Diag.set(diag, S.fillZ(&fmt, S.tr().labelValueFmt, .{ S.tr().operationFailed, "{0}" }), .{msg});
 }
 
 // ---- progress and prompts ---------------------------------------------------------------------------
@@ -1072,7 +1072,7 @@ fn openX(gpa: Allocator, path: []const u8, password: ?[]const u8, shown: []const
         error.NotArchive => error.NotAnArchive,
         error.Failed => error.Damaged, // SevenZipArchiveException: the open itself failed
         error.FileNotFound => {
-            Diag.set(diag, S.fileNotFoundFmt.get(), .{shown});
+            Diag.set(diag, S.tr().fileNotFoundFmt, .{shown});
             return error.FileNotFound;
         },
         else => e,
@@ -1113,7 +1113,7 @@ pub fn open(gpa: Allocator, io: Io, path: []const u8, password: ?[]const u8, pro
     errdefer gpa.free(open_path);
     if (isFirstPart(path)) {
         if (!fileExists(path)) {
-            Diag.set(diag, S.fileNotFoundFmt.get(), .{path});
+            Diag.set(diag, S.tr().fileNotFoundFmt, .{path});
             return error.FileNotFound;
         }
         dir = try newTempDir(gpa, io);
@@ -1162,13 +1162,13 @@ pub fn open(gpa: Allocator, io: Io, path: []const u8, password: ?[]const u8, pro
 
 /// 7-Zip's "opened with errors / warnings" (Props.error_flags / warning_flags): the list may be partial. The text
 /// for the main cause, null = clean. A truncated .gz opens clean (its end is only seen when decoding: Test says).
-pub fn openWarning(p: sevenzip.Props) ?S.Str {
+pub fn openWarning(p: sevenzip.Props) ?[:0]const u8 {
     const f = p.error_flags | p.warning_flags;
     const af = sevenzip.arc_flag;
-    if (f & af.unexpected_end != 0) return S.openedTruncated;
-    if (f & (af.headers_error | af.encrypted_headers_error) != 0) return S.openedBadHeaders;
-    if (f & af.data_after_end != 0) return S.openedDataAfterEnd;
-    if (f != 0) return S.openedWithErrors;
+    if (f & af.unexpected_end != 0) return S.tr().openedTruncated;
+    if (f & (af.headers_error | af.encrypted_headers_error) != 0) return S.tr().openedBadHeaders;
+    if (f & af.data_after_end != 0) return S.tr().openedDataAfterEnd;
+    if (f != 0) return S.tr().openedWithErrors;
     return null;
 }
 
@@ -1352,7 +1352,7 @@ pub fn extract(
     };
     if (x.cancelled or progress.cancelled()) return error.Canceled;
     if (x.unsafe > 0) {
-        Diag.set(diag, S.unsafeSkippedFmt.get(), .{x.unsafe});
+        Diag.set(diag, kit.i18n.pick(S.tr().unsafeSkippedN, x.unsafe), .{x.unsafe});
         return error.UnsafeEntriesSkipped;
     }
     progress.send(100, "");
@@ -1407,8 +1407,8 @@ pub fn testArchive(gpa: Allocator, io: Io, a: *Archive, progress: Progress, diag
 
 // ---- info / report ------------------------------------------------------------------------------------
 
-fn label(s: S.Str) []const u8 {
-    return std.mem.trimEnd(u8, s.get(), ":");
+fn label(s: [:0]const u8) []const u8 {
+    return std.mem.trimEnd(u8, s, ":");
 }
 
 /// Engine.Describe: the Info window's rows, in order (unpacked size summed from the entries; packed = on disk).
@@ -1462,39 +1462,39 @@ pub fn describe(gpa: Allocator, io: Io, a: *Archive) anyerror![]Row {
         }
     };
     var nb: [32]u8 = undefined;
-    try R.add(gpa, &rows, S.infoFile.get(), a.source);
+    try R.add(gpa, &rows, S.tr().infoFile, a.source);
     const fmt_name: []const u8 = switch (props.format) {
         .SevenZip => "7z",
         .other => props.format_name,
         else => @tagName(props.format),
     };
-    try R.add(gpa, &rows, label(S.format), if (a.nested()) try ar.print("{s} ({s})", .{ fmt_name, fspath.basename(a.open_path) }) else fmt_name);
-    try R.add(gpa, &rows, label(S.method), if (methods.len > 0) methods else "-");
-    if (dictionaryOf(methods)) |d| try R.add(gpa, &rows, label(S.dictionary), niceSize(&nb, d));
-    const solid: []const u8 = if (!props.solid) S.no.get() else if (props.blocks) |b|
-        try ar.print("{s} ({s})", .{ S.yes.get(), try S.fill(ar, S.blocksFmt.get(), .{b}) })
+    try R.add(gpa, &rows, label(S.tr().format), if (a.nested()) try ar.print("{s} ({s})", .{ fmt_name, fspath.basename(a.open_path) }) else fmt_name);
+    try R.add(gpa, &rows, label(S.tr().method), if (methods.len > 0) methods else "-");
+    if (dictionaryOf(methods)) |d| try R.add(gpa, &rows, label(S.tr().dictionary), niceSize(&nb, d));
+    const solid: []const u8 = if (!props.solid) S.tr().no else if (props.blocks) |b|
+        try ar.print("{s} ({s})", .{ S.tr().yes, try S.fill(ar, kit.i18n.pick(S.tr().blocksN, b), .{b}) })
     else
-        S.yes.get();
-    try R.add(gpa, &rows, S.solid.get(), solid);
-    try R.add(gpa, &rows, S.encrypted.get(), if (!encrypted) S.no.get() else if (namesEncrypted(ar, io, a)) S.encryptedDataAndNames.get() else S.encryptedData.get());
-    try R.add(gpa, &rows, S.files.get(), try ar.print("{d}", .{files}));
-    try R.add(gpa, &rows, S.folders.get(), try ar.print("{d}", .{folders.count()}));
-    try R.add(gpa, &rows, S.unpacked.get(), niceSize(&nb, unpacked));
-    try R.add(gpa, &rows, S.@"packed".get(), niceSize(&nb, packed_size));
+        S.tr().yes;
+    try R.add(gpa, &rows, S.tr().solid, solid);
+    try R.add(gpa, &rows, S.tr().encrypted, if (!encrypted) S.tr().no else if (namesEncrypted(ar, io, a)) S.tr().encryptedDataAndNames else S.tr().encryptedData);
+    try R.add(gpa, &rows, S.tr().files, try ar.print("{d}", .{files}));
+    try R.add(gpa, &rows, S.tr().folders, try ar.print("{d}", .{folders.count()}));
+    try R.add(gpa, &rows, S.tr().unpacked, niceSize(&nb, unpacked));
+    try R.add(gpa, &rows, S.tr().@"packed", niceSize(&nb, packed_size));
     var ratio: Io.Writer.Allocating = .init(ar);
     if (unpacked > 0) {
         try fixed(&ratio.writer, @as(f64, @floatFromInt(packed_size)) * 100.0 / @as(f64, @floatFromInt(unpacked)), 1);
         try ratio.writer.writeAll("%");
     } else try ratio.writer.writeAll("-");
-    try R.add(gpa, &rows, S.ratio.get(), ratio.written());
+    try R.add(gpa, &rows, S.tr().ratio, ratio.written());
     if (isFirstPart(a.source)) {
         const parts = try partsOf(ar, a.source);
-        try R.add(gpa, &rows, S.volumesCount.get(), try ar.print("{d}", .{parts.len}));
+        try R.add(gpa, &rows, S.tr().volumesCount, try ar.print("{d}", .{parts.len}));
     } else if (props.volumes) |v| if (v > 1) {
         // ponytail: only real sets; C# showed any "Number of volumes" the handler reported
-        try R.add(gpa, &rows, S.volumesCount.get(), try ar.print("{d}", .{v}));
+        try R.add(gpa, &rows, S.tr().volumesCount, try ar.print("{d}", .{v}));
     };
-    if (props.comment) |c| if (c.len > 0) try R.add(gpa, &rows, S.comment.get(), c);
+    if (props.comment) |c| if (c.len > 0) try R.add(gpa, &rows, S.tr().comment, c);
     return rows.toOwnedSlice(gpa);
 }
 
@@ -1565,12 +1565,15 @@ pub fn report(gpa: Allocator, io: Io, a: *Archive, as_html: bool) anyerror![]u8 
     }.f);
     var lines: std.ArrayList(Line) = .empty;
     for (keyed.items) |k| try lines.append(ar, k.line);
-    const cols: Line = .{ S.name.get(), S.size.get(), S.modified.get(), S.crc.get(), label(S.method) };
+    const cols: Line = .{ S.tr().name, S.tr().size, S.tr().modified, S.tr().crc, label(S.tr().method) };
     var out: Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
     const wr = &out.writer;
     if (!as_html) {
-        for (head) |r| try wr.print("{s}: {s}\r\n", .{ r.label, r.value });
+        for (head) |r| {
+            try S.write(wr, S.tr().labelValueFmt, .{ r.label, r.value });
+            try wr.writeAll("\r\n");
+        }
         try wr.writeAll("\r\n");
         var width: [5]usize = @splat(0);
         for (0..5) |i| width[i] = chars(cols[i]);
@@ -1607,7 +1610,7 @@ pub fn report(gpa: Allocator, io: Io, a: *Archive, as_html: bool) anyerror![]u8 
         try wr.writeAll("</td></tr>\n");
     }
     try wr.writeAll("</table>\n<h2>");
-    try html(wr, S.filesHeading.get());
+    try html(wr, S.tr().filesHeading);
     try wr.writeAll("</h2>\n<table>\n<tr>");
     for (cols) |c| {
         try wr.writeAll("<th>");
@@ -1920,7 +1923,7 @@ pub fn compress(gpa: Allocator, io: Io, inputs: []const []const u8, out_path: []
         var a: [32]u8 = undefined;
         var b: [32]u8 = undefined;
         var c: [32]u8 = undefined;
-        Diag.set(diag, S.dictionaryTooBigFmt.get(), .{ niceSize(&a, o.dictionary), niceSize(&b, fit.need), niceSize(&c, ram) });
+        Diag.set(diag, S.tr().dictionaryTooBigFmt, .{ niceSize(&a, o.dictionary), niceSize(&b, fit.need), niceSize(&c, ram) });
         return error.DictionaryTooBig;
     }
     if (o.volume_size < 0) {
@@ -2049,7 +2052,7 @@ pub fn convert(
     const pw = nonEmpty(password);
     // The original's password goes on, so an encrypted archive never comes out readable by anyone.
     if (pw != null and !kind(k).password) {
-        Diag.set(diag, S.convertWouldDecryptFmt.get(), .{kind(k).name});
+        Diag.set(diag, S.tr().convertWouldDecryptFmt, .{kind(k).name});
         return error.ConvertWouldDecrypt;
     }
     var arena: std.heap.ArenaAllocator = .init(gpa);
@@ -2287,7 +2290,7 @@ pub fn recycle(gpa: Allocator, paths: []const []const u8, undo: bool, diag: ?*Di
     op.fFlags = @intCast(base | (if (undo) w.FOF_ALLOWUNDO | w.FOF_WANTNUKEWARNING else 0));
     const rc = w.SHFileOperationW(&op);
     if (rc != 0 or op.fAnyOperationsAborted != 0) {
-        Diag.set(diag, S.recycleFailedFmt.get(), .{rc});
+        Diag.set(diag, S.tr().recycleFailedFmt, .{rc});
         return error.RecycleFailed;
     }
 }
@@ -2348,9 +2351,9 @@ fn mark(io: Io, files: []const []const u8, zone: []const u8, policy: MotwPolicy)
 const testing = std.testing;
 
 test "exit codes and messages (the error contract)" {
-    const saved = S.uk;
-    defer S.uk = saved;
-    S.uk = false;
+    const saved = kit.i18n.current();
+    defer kit.i18n.set(saved);
+    kit.i18n.set(.en);
     try testing.expectEqual(@as(u8, 255), exitCodeOf(error.Canceled));
     try testing.expectEqual(@as(u8, 1), exitCodeOf(error.UnsafeEntriesSkipped));
     try testing.expectEqual(@as(u8, 11), exitCodeOf(error.PasswordNeeded));
@@ -2362,7 +2365,7 @@ test "exit codes and messages (the error contract)" {
     try testing.expectEqualStrings("The file is damaged.", friendly(error.Damaged, null));
     var d: Diag = .{};
     try testing.expect(d.text() == null);
-    Diag.set(&d, S.unsafeSkippedFmt.get(), .{3});
+    Diag.set(&d, kit.i18n.pick(S.tr().unsafeSkippedN, 3), .{3});
     try testing.expectEqualStrings("3 entries with unsafe paths were skipped (path traversal attempt).", friendly(error.UnsafeEntriesSkipped, &d));
     Diag.set(null, "ignored", .{});
     try testing.expectEqual(OverwriteMode.Overwrite, Conflict.always_overwrite.ask(null, "x").?);
@@ -2374,7 +2377,7 @@ test "exit codes and messages (the error contract)" {
     }
     try testing.expect(winErr(1392) == error.Unexpected); // ERROR_FILE_CORRUPT: the code is kept for the message
     try testing.expect(std.mem.find(u8, friendly(error.Unexpected, null), "Unexpected") == null);
-    try testing.expect(std.mem.startsWith(u8, friendly(error.NoSuchThing, null), S.operationFailed.get()));
+    try testing.expect(std.mem.startsWith(u8, friendly(error.NoSuchThing, null), S.tr().operationFailed));
 }
 
 test "OrdinalIgnoreCase folding, cut names, long paths" {

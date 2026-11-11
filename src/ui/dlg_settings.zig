@@ -34,6 +34,8 @@ pub const Settings = struct {
     arena: std.heap.ArenaAllocator,
     folder: [2048:0]u8 = @splat(0),
     motw: usize,
+    /// The language picked here: applied and saved at once (no OK needed); Cancel does not undo it.
+    lang: ?kit.i18n.Lang,
     list: std.ArrayList(settings.Profile) = .empty,
     sel: usize = 0,
     reply: Reply = .{},
@@ -41,40 +43,43 @@ pub const Settings = struct {
     done: bool = false,
 
     pub fn title(_: *Settings, _: []u8) []const u8 {
-        return S.settingsTitle.get();
+        return S.tr().settingsTitle;
     }
 
     pub fn body(f: *Settings, d: *Dialogs) bool {
         f.poll(d);
         if (f.done) return false;
         const s = D.scale();
-        im.ImGui_TextUnformatted(S.archiveFolder.get());
-        _ = D.inputHint("settings_folder", S.nextToFiles.get(), &f.folder, 390);
+        D.caption(S.tr().language, 202);
+        im.ImGui_SetNextItemWidth(294 * s);
+        if (kit.i18n.combo("##settings_lang", S.tr().languageAuto, &f.lang)) saveLanguage(d, f.lang);
+        im.ImGui_TextUnformatted(S.tr().archiveFolder);
+        _ = D.inputHint("settings_folder", S.tr().nextToFiles, &f.folder, 390);
         im.ImGui_SameLine();
-        if (sideButton(S.browse.get(), "settings_browse", 98)) {
-            if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .title = S.archiveFolder.get(), .folder = D.bufText(&f.folder) }) catch null) |p| {
+        if (sideButton(S.tr().browse, "settings_browse", 98)) {
+            if (kit.win.pickFolder(f.gpa, D.owner(d), .{ .title = S.tr().archiveFolder, .folder = D.bufText(&f.folder) }) catch null) |p| {
                 defer f.gpa.free(p);
                 D.setText(&f.folder, p);
             }
         }
         im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Text, im.ImGui_GetStyle().*.Colors[im.ImGuiCol_TextDisabled]);
-        kit.ui.text("settings_note", S.archiveFolderNote.get(), null, 496 * s);
+        kit.ui.text("settings_note", S.tr().archiveFolderNote, null, 496 * s);
         im.ImGui_PopStyleColor();
 
         // What extracted files inherit from a downloaded archive (Windows' "this came from the Internet" mark).
-        D.caption(S.motwLabel.get(), 202);
-        const motws = [_][]const u8{ S.motwNever.get(), S.motwRisky.get(), S.motwAll.get() };
+        D.caption(S.tr().motwLabel, 202);
+        const motws = [_][]const u8{ S.tr().motwNever, S.tr().motwRisky, S.tr().motwAll };
         _ = D.combo("settings_motw", &motws, &f.motw, 294);
-        D.tooltip(S.motwTip.get());
+        D.tooltip(S.tr().motwTip);
 
-        im.ImGui_TextUnformatted(S.profiles.get());
+        im.ImGui_TextUnformatted(S.tr().profiles);
         const top = im.ImGui_GetCursorPosY();
         // As tall as the four buttons beside it.
         const list_h = 4 * im.ImGui_GetFrameHeight() + 3 * im.ImGui_GetStyle().*.ItemSpacing.y;
         if (im.ImGui_BeginListBox("##settings_profiles", .{ .x = 370 * s, .y = list_h })) {
             for (f.list.items, 0..) |p, i| {
                 var nb: [700]u8 = undefined;
-                const name = std.mem.print(&nb, "{s}{s}{s}", .{ p.Name, if (p.IsDefault) S.defaultMark.get() else "", if (p.InMenu) S.menuMark.get() else "" }) catch p.Name;
+                const name = std.mem.print(&nb, "{s}{s}{s}", .{ p.Name, if (p.IsDefault) S.tr().defaultMark else "", if (p.InMenu) S.tr().menuMark else "" }) catch p.Name;
                 if (listBoxRow(name, "settings_p", i, i == f.sel)) f.sel = i;
             }
             im.ImGui_EndListBox();
@@ -84,41 +89,41 @@ pub const Settings = struct {
         const has = f.sel < f.list.items.len;
         im.ImGui_BeginDisabled(!has);
         im.ImGui_SetCursorPos(.{ .x = bx, .y = top });
-        if (sideButton(S.renameButton.get(), "settings_rename", 118) and has) {
+        if (sideButton(S.tr().renameButton, "settings_rename", 118) and has) {
             f.state = .rename;
-            P.askName(d, S.renameProfile.get(), null, .profile, f.list.items[f.sel].Name, false, false, &f.reply);
+            P.askName(d, S.tr().renameProfile, null, .profile, f.list.items[f.sel].Name, false, false, &f.reply);
         }
         im.ImGui_SetCursorPosX(bx);
-        if (sideButton(S.delete.get(), "settings_delete", 118) and has) {
+        if (sideButton(S.tr().delete, "settings_delete", 118) and has) {
             _ = f.list.orderedRemove(f.sel);
             if (f.sel > 0 and f.sel >= f.list.items.len) f.sel -= 1;
         }
         im.ImGui_SetCursorPosX(bx);
-        if (sideButton(S.makeDefault.get(), "settings_default", 118) and has) {
+        if (sideButton(S.tr().makeDefault, "settings_default", 118) and has) {
             const on = !f.list.items[f.sel].IsDefault;
             for (f.list.items) |*x| x.IsDefault = false;
             f.list.items[f.sel].IsDefault = on; // a second click on the default one turns "default" off
         }
         im.ImGui_SetCursorPosX(bx);
-        if (sideButton(S.profileInMenuButton.get(), "settings_in_menu", 118) and has) {
+        if (sideButton(S.tr().profileInMenuButton, "settings_in_menu", 118) and has) {
             const p = &f.list.items[f.sel];
             p.InMenu = !p.InMenu and std.mem.findScalar(u8, p.Name, '"') == null;
         }
         im.ImGui_EndDisabled();
         im.ImGui_SetCursorPosY(@max(after, im.ImGui_GetCursorPosY()) + 8 * s);
 
-        if (sideButton(S.resetDefaults.get(), "settings_reset", 170)) {
+        if (sideButton(S.tr().resetDefaults, "settings_reset", 170)) {
             f.state = .reset;
-            P.message(d, .question, S.app, S.resetConfirm.get(), .yes_no, false, &f.reply);
+            P.message(d, .question, S.app, S.tr().resetConfirm, .yes_no, false, &f.reply);
         }
         im.ImGui_SameLine();
-        D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-        if (D.primary(true, S.ok.get(), "settings_ok") or (D.enterPressed() and !im.ImGui_IsAnyItemActive())) {
+        D.alignRight(&.{ S.tr().ok, S.tr().cancel });
+        if (D.primary(true, S.tr().ok, "settings_ok") or (D.enterPressed() and !im.ImGui_IsAnyItemActive())) {
             f.apply(d);
             return false;
         }
         im.ImGui_SameLine();
-        if (D.button(S.cancel.get(), "settings_cancel") or D.escPressed()) return false;
+        if (D.button(S.tr().cancel, "settings_cancel") or D.escPressed()) return false;
         return true;
     }
 
@@ -135,12 +140,13 @@ pub const Settings = struct {
                 if (f.sel >= f.list.items.len) return;
                 for (f.list.items, 0..) |x, i| if (i != f.sel and types.eqlIgnoreCase(x.Name, name)) {
                     var buf: [600]u8 = undefined;
-                    return P.message(d, .info, S.app, S.fillZ(&buf, S.profileNameTakenFmt.get(), .{name}), .ok, false, null);
+                    return P.message(d, .info, S.app, S.fillZ(&buf, S.tr().profileNameTakenFmt, .{name}), .ok, false, null);
                 };
                 f.list.items[f.sel].Name = f.arena.allocator().dupe(u8, name) catch return;
             },
             .reset => {
                 settings.reset();
+                saveLanguage(d, null); // "Auto" again: Windows' language, for the menu DLL too
                 d.ctx.post(.settings_changed);
                 f.done = true; // already applied; nothing left for OK to save
             },
@@ -178,11 +184,21 @@ pub const Settings = struct {
     }
 };
 
+/// The language takes effect on the next frame (kit.i18n.apply, done by the combo or here), is saved to
+/// settings.json and to Software\MakePack Language for the Explorer menu DLL.
+fn saveLanguage(d: *Dialogs, l: ?kit.i18n.Lang) void {
+    kit.i18n.apply(l);
+    const s = settings.current();
+    s.Language = if (l) |x| x.code() else "Auto";
+    settings.commit();
+    C.assoc.setLanguage(d.ctx.hive, s.Language, s.Profiles) catch {};
+}
+
 pub fn openSettings(d: *Dialogs) void {
     const gpa = d.ctx.gpa;
     const f = gpa.create(Settings) catch return;
     const s = settings.current();
-    f.* = .{ .gpa = gpa, .arena = .init(gpa), .motw = @backingInt(s.Motw) };
+    f.* = .{ .gpa = gpa, .arena = .init(gpa), .motw = @backingInt(s.Motw), .lang = s.lang() };
     D.setText(&f.folder, s.ArchiveFolder orelse "");
     // Edited on a copy and written back on OK: Cancel leaves the profiles as they were.
     for (s.Profiles) |p| {
@@ -205,7 +221,7 @@ pub const Favorites = struct {
     renaming: bool = false,
 
     pub fn title(_: *Favorites, _: []u8) []const u8 {
-        return D.noDots(S.organizeFavorites.get());
+        return D.noDots(S.tr().organizeFavorites);
     }
 
     pub fn body(f: *Favorites, d: *Dialogs) bool {
@@ -234,30 +250,30 @@ pub const Favorites = struct {
         const bx = im.ImGui_GetCursorPosX() + 392 * s;
         const has = f.sel < f.items.items.len;
         im.ImGui_SetCursorPos(.{ .x = bx, .y = top });
-        if (sideButton(S.moveUp.get(), "favorites_up", 104) and has and f.sel > 0) {
+        if (sideButton(S.tr().moveUp, "favorites_up", 104) and has and f.sel > 0) {
             std.mem.swap(settings.Favorite, &f.items.items[f.sel], &f.items.items[f.sel - 1]);
             f.sel -= 1;
         }
         im.ImGui_SetCursorPosX(bx);
-        if (sideButton(S.moveDown.get(), "favorites_down", 104) and has and f.sel + 1 < f.items.items.len) {
+        if (sideButton(S.tr().moveDown, "favorites_down", 104) and has and f.sel + 1 < f.items.items.len) {
             std.mem.swap(settings.Favorite, &f.items.items[f.sel], &f.items.items[f.sel + 1]);
             f.sel += 1;
         }
         im.ImGui_SetCursorPosX(bx);
         im.ImGui_Dummy(.{ .x = 0, .y = 4 * s });
         im.ImGui_SetCursorPosX(bx);
-        if (sideButton(S.renameButton.get(), "favorites_rename", 104) and has) {
+        if (sideButton(S.tr().renameButton, "favorites_rename", 104) and has) {
             f.renaming = true;
-            P.askName(d, D.noDots(S.renameButton.get()), S.favoritePrompt.get(), .line, f.items.items[f.sel].Name, false, false, &f.reply);
+            P.askName(d, D.noDots(S.tr().renameButton), S.tr().favoritePrompt, .line, f.items.items[f.sel].Name, false, false, &f.reply);
         }
         im.ImGui_SetCursorPosX(bx);
-        if (sideButton(S.remove.get(), "favorites_remove", 104) and has) {
+        if (sideButton(S.tr().remove, "favorites_remove", 104) and has) {
             _ = f.items.orderedRemove(f.sel);
             if (f.sel > 0 and f.sel >= f.items.items.len) f.sel -= 1;
         }
         // OK + Cancel end level with the list's bottom edge.
         im.ImGui_SetCursorPos(.{ .x = bx, .y = top + 276 * s - 2 * im.ImGui_GetFrameHeight() - im.ImGui_GetStyle().*.ItemSpacing.y });
-        if (sideButton(S.ok.get(), "favorites_ok", 104) or (D.enterPressed() and !f.renaming)) {
+        if (sideButton(S.tr().ok, "favorites_ok", 104) or (D.enterPressed() and !f.renaming)) {
             const a = settings.arena();
             const list = a.alloc(settings.Favorite, f.items.items.len) catch return false;
             for (f.items.items, 0..) |x, i| list[i] = .{
@@ -271,7 +287,7 @@ pub const Favorites = struct {
             return false;
         }
         im.ImGui_SetCursorPosX(bx);
-        if (sideButton(S.cancel.get(), "favorites_cancel", 104) or D.escPressed()) return false;
+        if (sideButton(S.tr().cancel, "favorites_cancel", 104) or D.escPressed()) return false;
         return true;
     }
 

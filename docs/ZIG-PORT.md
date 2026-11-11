@@ -62,10 +62,16 @@ ReleaseSafe sizes (2026-11-10): MakePack.exe 3,256,320 bytes, MakePackShell.dll 
   `eqlIgnoreCase` (.NET OrdinalIgnoreCase via CompareStringOrdinal: profile names and paths).
 
 ### strings.zig
-`S.newArchive.get()` etc. (C# names in camelCase; keywords `@"error"`, `@"test"`, `@"type"`, `@"packed"`),
-`S.levels()`, `S.foldersN/filesN/bytes(buf, n)` (Ukrainian plural), `S.write/fill/fillZ(template, .{args})` for the
-`*Fmt` templates (`{0}`..`{9}`), `S.plain` strips the WinForms `&`. `S.init()` picks uk/en from
-GetUserDefaultUILanguage. All 304 string pairs verified against Strings.cs by script.
+Six UI languages (kit.i18n: en, uk, pl, de, es, fr). Texts live in `src/i18n/<code>.zig`: en.zig = the `Strings`
+type (C# names in camelCase; keywords `@"error"`, `@"test"`, `@"type"`, `@"packed"`) + English + notes for
+translators; the others = `pub const t: en.Strings` (a missing/extra key does not compile; the test checks
+placeholders and plural forms). pl/de/es/fr are still English copies marked "TODO translate".
+`S.tr().newArchive` = the current language; comptime tables keep an `S.Key` (`.tbAdd`) and draw `S.get(key)`.
+`S.levels()`, `S.foldersN/filesN/bytes(buf, n)` (kit.i18n plural forms, number grouped by the user's locale),
+`S.fillZ` (= kit.i18n.fmt) / `S.fill` / `S.write` for the `*Fmt` templates (`{0}`..`{9}`), `S.plain` strips `&`.
+Language: MAKEKIT_LANG > settings.json "Language" ("Auto" | code; Settings dialog, applied at once) > Windows UI
+language > en. The choice is mirrored to HKCU\Software\MakePack "Language" for MakePackShell.dll (its own six-language
+title table). The 304 original uk/en pairs were verified byte-for-byte against the old strings.zig by script.
 
 ### settings.zig
 Structs mirror the C# JSON: **field names are the JSON keys**. `load(gpa, io, path)` (never fails: defaults),
@@ -152,8 +158,8 @@ The full contract is the module doc + doc comments of those three files; the ess
 - Tests: files only in `testutil.TempDir`, registry only under `testutil.regTestKey`, settings via
   MAKEPACK_SETTINGS, Recycle Bin only for files in the temp dir (put back), GUI only with
   `MAKEKIT_DISPLAY=\\.\DISPLAY1`, kill only your own PIDs.
-- Non-ASCII text only via Write/Edit; check with `LC_ALL=C.UTF-8 grep -rnE "Р[°ѕµ‡]|С[–‚”]" src shell` (in a
-  non-UTF-8 locale grep matches bytes and flags the genuine word "Рівень" in strings.zig).
+- Non-ASCII text only via Write/Edit; check with `LC_ALL=C.UTF-8 grep -rnE "Р[°ѕµ‡]|С[–‚”]|Ã[¤¶¼Ÿ©¨]|Å[‚›º¼]" src shell`
+  (in a non-UTF-8 locale grep matches bytes and flags the genuine word "Рівень" in src/i18n/uk.zig).
 
 ## Contract changes
 - engine: `friendly()` returns a threadlocal buffer valid until the next `friendly()` on that thread.

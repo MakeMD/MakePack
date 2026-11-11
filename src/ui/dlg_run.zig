@@ -244,7 +244,7 @@ pub const Run = struct {
             @memcpy(r.err_text[0..n], t[0..n]);
             r.err_len = n;
         }
-        P.message(r.d, .err, S.@"error".get(), r.errText(), .ok, false, &r.alert_reply);
+        P.message(r.d, .err, S.tr().@"error", r.errText(), .ok, false, &r.alert_reply);
     }
 
     fn finish(r: *Run, o: Outcome) Outcome {
@@ -292,10 +292,10 @@ pub const Run = struct {
         var lb: [1100]u8 = undefined;
         const t = r.title_buf[0..r.title_len];
         // ProgressForm's label: "Title…" or "Title: file"
-        const label: []const u8 = (if (file.len == 0)
-            std.mem.print(&lb, "{s}\u{2026}", .{t})
+        const label: []const u8 = if (file.len == 0)
+            std.mem.print(&lb, "{s}\u{2026}", .{t}) catch t
         else
-            std.mem.print(&lb, "{s}: {s}", .{ t, file })) catch t;
+            S.fillZ(&lb, S.tr().labelValueFmt, .{ t, file });
         var ib: [64]u8 = undefined;
         const status_id = std.mem.print(&ib, "{s}_status", .{r.id}) catch "progress_status";
         var fb: [700]u8 = undefined;
@@ -304,10 +304,10 @@ pub const Run = struct {
         var ob: [16]u8 = undefined;
         const overlay = std.mem.printSentinel(&ob, "{d}%", .{pct}, 0) catch "";
         im.ImGui_ProgressBar(r.job.progress(), .{ .x = 436 * s, .y = 0 }, overlay.ptr);
-        D.alignRight(&.{S.cancel.get()});
+        D.alignRight(&.{S.tr().cancel});
         var cb: [64]u8 = undefined;
         const cancel_id = std.mem.print(&cb, "{s}_cancel", .{r.id}) catch "progress_cancel";
-        if (D.buttonOn(!r.cancel_pressed, S.cancel.get(), cancel_id) or D.escPressed()) r.cancel();
+        if (D.buttonOn(!r.cancel_pressed, S.tr().cancel, cancel_id) or D.escPressed()) r.cancel();
         return true;
     }
 
@@ -473,12 +473,12 @@ pub const OpenJob = struct {
         const s = D.scale();
         var lb: [400]u8 = undefined;
         const name = std.Io.Dir.path.basename(o.path);
-        const label = std.mem.print(&lb, "{s}: {s}\u{2026}", .{ S.openCmd.get(), name }) catch name;
+        const label = std.mem.print(&lb, "{s}: {s}\u{2026}", .{ S.tr().openCmd, name }) catch name;
         var fb: [700]u8 = undefined;
         kit.ui.text("opening_status", fit(label, 436 * s, &fb), null, 0);
         im.ImGui_ProgressBar(-1.0 * @as(f32, @floatCast(im.ImGui_GetTime())), .{ .x = 436 * s, .y = 0 }, "");
-        D.alignRight(&.{S.cancel.get()});
-        if (D.buttonOn(!o.cancel_pressed, S.cancel.get(), "opening_cancel") or D.escPressed()) o.cancel();
+        D.alignRight(&.{S.tr().cancel});
+        if (D.buttonOn(!o.cancel_pressed, S.tr().cancel, "opening_cancel") or D.escPressed()) o.cancel();
         return true;
     }
 
@@ -561,17 +561,17 @@ pub const Opener = struct {
         if (o.try_only) return o.open(d);
         if (!engine.fileExists(path)) {
             o.exit = 10;
-            return o.alert(d, S.fileNotFoundFmt.get(), path);
+            return o.alert(d, S.tr().fileNotFoundFmt, path);
         }
         switch (engine.probe(d.ctx.io, path)) {
             // a password could not help: never prompt
             .not_archive => {
                 o.exit = 2;
-                return o.alert(d, S.notAnArchive.get(), null);
+                return o.alert(d, S.tr().notAnArchive, null);
             },
             .damaged => {
                 o.exit = 3;
-                return o.alert(d, S.damaged.get(), null);
+                return o.alert(d, S.tr().damaged, null);
             },
             .encrypted_headers => return o.ask(d, null),
             .archive => o.open(d),
@@ -595,7 +595,7 @@ pub const Opener = struct {
         var buf: [2048]u8 = undefined;
         const t = if (arg) |a| S.fillZ(&buf, template, .{a}) else template;
         o.state = .alerting;
-        P.message(d, .err, S.cannotOpen.get(), t, .ok, false, &o.reply);
+        P.message(d, .err, S.tr().cannotOpen, t, .ok, false, &o.reply);
     }
 
     fn done(o: *Opener, exit: u8) void {
@@ -632,7 +632,7 @@ pub const Opener = struct {
                     o.oj.result = null;
                     o.archive = a;
                     // opened, but partial (a truncated zip / tar): say so instead of a silently short list
-                    if (engine.openWarning(a.x.props)) |t| d.alert(.warning, a.display(), t.get());
+                    if (engine.openWarning(a.x.props)) |t| d.alert(.warning, a.display(), t);
                     o.done(0);
                     return true;
                 }
@@ -652,10 +652,10 @@ pub const Opener = struct {
                 // a 7z whose header is not encrypted cannot want a password: its own "damaged" alert
                 if (!sevenZipMayBeEncrypted(d.ctx.io, o.path)) {
                     o.exit = 3;
-                    o.alert(d, S.damaged.get(), null);
+                    o.alert(d, S.tr().damaged, null);
                     return false;
                 }
-                o.ask(d, if (o.password == null) S.enterPassword.get() else S.wrongPasswordRetry.get());
+                o.ask(d, if (o.password == null) S.tr().enterPassword else S.tr().wrongPasswordRetry);
                 return false;
             },
         }
@@ -762,7 +762,7 @@ pub const Ensurer = struct {
 
     fn failAlert(e: *Ensurer, d: *Dialogs) void {
         e.state = .alerting;
-        P.message(d, .err, S.cannotOpen.get(), e.oj.errText(), .ok, false, &e.reply);
+        P.message(d, .err, S.tr().cannotOpen, e.oj.errText(), .ok, false, &e.reply);
     }
 
     pub fn deinit(e: *Ensurer, d: *Dialogs) void {

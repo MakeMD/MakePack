@@ -195,21 +195,21 @@ pub const Viewer = struct {
         var quit = false;
         if (im.ImGui_BeginMenuBar()) {
             var pb: [64]u8 = undefined;
-            if (im.ImGui_BeginMenu(D.lbl(&pb, S.mFile.get(), "viewer_mfile").ptr)) {
+            if (im.ImGui_BeginMenu(D.lbl(&pb, S.tr().mFile, "viewer_mfile").ptr)) {
                 var b: [128]u8 = undefined;
-                if (im.ImGui_MenuItemEx(D.lbl(&b, S.exit.get(), "viewer_exit").ptr, "Esc", false, true)) quit = true;
+                if (im.ImGui_MenuItemEx(D.lbl(&b, S.tr().exit, "viewer_exit").ptr, "Esc", false, true)) quit = true;
                 im.ImGui_EndMenu();
             }
-            if (im.ImGui_BeginMenu(D.lbl(&pb, S.mEdit.get(), "viewer_medit").ptr)) {
+            if (im.ImGui_BeginMenu(D.lbl(&pb, S.tr().mEdit, "viewer_medit").ptr)) {
                 var b: [128]u8 = undefined;
-                if (im.ImGui_MenuItemEx(D.lbl(&b, S.copyCmd.get(), "viewer_copy").ptr, "Ctrl+C", false, true)) v.copy(d);
-                if (im.ImGui_MenuItemEx(D.lbl(&b, S.selectAllItems.get(), "viewer_select_all").ptr, "Ctrl+A", false, true)) v.selectAll();
+                if (im.ImGui_MenuItemEx(D.lbl(&b, S.tr().copyCmd, "viewer_copy").ptr, "Ctrl+C", false, true)) v.copy(d);
+                if (im.ImGui_MenuItemEx(D.lbl(&b, S.tr().selectAllItems, "viewer_select_all").ptr, "Ctrl+A", false, true)) v.selectAll();
                 im.ImGui_Separator();
-                if (im.ImGui_MenuItemEx(D.lbl(&b, S.findText.get(), "viewer_find").ptr, "Ctrl+F", false, true)) v.askFind(d);
-                if (im.ImGui_MenuItemEx(D.lbl(&b, S.findNext.get(), "viewer_find_next").ptr, "F3", false, true)) v.f3(d);
+                if (im.ImGui_MenuItemEx(D.lbl(&b, S.tr().findText, "viewer_find").ptr, "Ctrl+F", false, true)) v.askFind(d);
+                if (im.ImGui_MenuItemEx(D.lbl(&b, S.tr().findNext, "viewer_find_next").ptr, "F3", false, true)) v.f3(d);
                 im.ImGui_EndMenu();
             }
-            if (im.ImGui_BeginMenu(D.lbl(&pb, S.mView.get(), "viewer_mview").ptr)) {
+            if (im.ImGui_BeginMenu(D.lbl(&pb, S.tr().mView, "viewer_mview").ptr)) {
                 var b: [128]u8 = undefined;
                 for (enc_menu, 0..) |m, i| {
                     var ib: [32]u8 = undefined;
@@ -217,8 +217,8 @@ pub const Viewer = struct {
                     if (im.ImGui_MenuItemEx(D.lbl(&b, m.text, id).ptr, null, v.enc == m.enc, true)) v.setEnc(m.enc);
                 }
                 im.ImGui_Separator();
-                if (im.ImGui_MenuItemEx(D.lbl(&b, S.wordWrap.get(), "viewer_wrap").ptr, "Ctrl+W", v.wrap, true)) v.wrap = !v.wrap;
-                if (im.ImGui_MenuItemEx(D.lbl(&b, S.fontCmd.get(), "viewer_font").ptr, null, false, true)) v.font_popup = true;
+                if (im.ImGui_MenuItemEx(D.lbl(&b, S.tr().wordWrap, "viewer_wrap").ptr, "Ctrl+W", v.wrap, true)) v.wrap = !v.wrap;
+                if (im.ImGui_MenuItemEx(D.lbl(&b, S.tr().fontCmd, "viewer_font").ptr, null, false, true)) v.font_popup = true;
                 im.ImGui_EndMenu();
             }
             im.ImGui_EndMenuBar();
@@ -228,11 +228,11 @@ pub const Viewer = struct {
             v.font_popup = false;
         }
         if (im.ImGui_BeginPopup("##viewer_font_popup", 0)) {
-            im.ImGui_TextUnformatted(D.noDots(S.fontCmd.get()).ptr);
+            im.ImGui_TextUnformatted(D.noDots(S.tr().fontCmd).ptr);
             _ = D.combo("viewer_font_face", &faces, &v.face, 200);
             im.ImGui_SetNextItemWidth(200 * D.scale());
             _ = im.ImGui_SliderInt("##viewer_font_size", &v.font_size, 10, 32);
-            if (D.button(S.ok.get(), "viewer_font_ok")) im.ImGui_CloseCurrentPopup();
+            if (D.button(S.tr().ok, "viewer_font_ok")) im.ImGui_CloseCurrentPopup();
             im.ImGui_EndPopup();
         }
 
@@ -316,7 +316,7 @@ pub const Viewer = struct {
         if (at == null) at = findWide(wide, 0, nw, !v.match_case);
         const hit = at orelse {
             var buf: [600]u8 = undefined;
-            return P.message(d, .info, S.app, S.fillZ(&buf, S.notFoundFmt.get(), .{needle}), .ok, false, null);
+            return P.message(d, .info, S.app, S.fillZ(&buf, S.tr().notFoundFmt, .{needle}), .ok, false, null);
         };
         const b0 = utf8Len(wide[0..hit]);
         const b1 = b0 + utf8Len(wide[hit .. hit + nw.len]);
@@ -366,7 +366,7 @@ const FindAsk = struct {
     focus: bool = true,
 
     pub fn title(_: *FindAsk, _: []u8) []const u8 {
-        return S.tbFind.get();
+        return S.tr().tbFind;
     }
 
     pub fn body(f: *FindAsk, d: *Dialogs) bool {
@@ -375,11 +375,11 @@ const FindAsk = struct {
             f.focus = false;
         }
         const entered = D.input("viewer_find_text", &f.box, 356, im.ImGuiInputTextFlags_EnterReturnsTrue);
-        _ = D.checkbox(S.matchCase.get(), "viewer_find_case", &f.match_case);
-        D.alignRight(&.{ S.findNext.get(), S.cancel.get() });
-        const ok = D.button(S.findNext.get(), "viewer_find_go") or entered;
+        _ = D.checkbox(S.tr().matchCase, "viewer_find_case", &f.match_case);
+        D.alignRight(&.{ S.tr().findNext, S.tr().cancel });
+        const ok = D.button(S.tr().findNext, "viewer_find_go") or entered;
         im.ImGui_SameLine();
-        if (D.button(S.cancel.get(), "viewer_find_cancel") or D.escPressed()) return false;
+        if (D.button(S.tr().cancel, "viewer_find_cancel") or D.escPressed()) return false;
         if (ok and D.bufText(&f.box).len > 0) {
             if (f.reply) |r| r.* = .{ .done = true, .button = 0, .text = d.ctx.gpa.dupe(u8, D.bufText(&f.box)) catch null, .flag1 = f.match_case };
             f.reply = null;
@@ -404,7 +404,7 @@ pub fn open(d: *Dialogs, path: []const u8, title_text: []const u8) void {
     const io = d.ctx.io;
     const bytes = readHead(gpa, io, path) catch |e| {
         var buf: [1200]u8 = undefined;
-        return P.message(d, .err, S.app, S.fillZ(&buf, S.cannotReadFmt.get(), .{ std.Io.Dir.path.basename(path), engine.friendly(e, null) }), .ok, false, null);
+        return P.message(d, .err, S.app, S.fillZ(&buf, S.tr().cannotReadFmt, .{ std.Io.Dir.path.basename(path), engine.friendly(e, null) }), .ok, false, null);
     };
     const v = gpa.create(Viewer) catch return gpa.free(bytes.data);
     const enc = detect(bytes.data);
@@ -412,7 +412,7 @@ pub fn open(d: *Dialogs, path: []const u8, title_text: []const u8) void {
         gpa.free(bytes.data);
         return gpa.destroy(v);
     };
-    const t = gpa.print("{s}{s} \u{2014} {s}", .{ title_text, if (bytes.truncated) S.truncated.get() else "", S.app }) catch {
+    const t = gpa.print("{s}{s} \u{2014} {s}", .{ title_text, if (bytes.truncated) S.tr().truncated else "", S.app }) catch {
         gpa.free(bytes.data);
         gpa.free(text.ptr[0 .. text.len + 2]);
         return gpa.destroy(v);
