@@ -1,5 +1,5 @@
 # Moves a process's top-level window to \\.\DISPLAY<n>, dumps its UIA tree to <Out>.txt and a screenshot to <Out>.png.
-# Usage: tools\uiadump.ps1 -ProcessName OtherArc -Out C:\tmp\OtherArc [-Class OtherArcWindow] [-Screen 1] [-Depth 7] [-Resize]
+# Usage: tools\uiadump.ps1 -ProcessName notepad -Out C:\tmp\notepad [-Class Notepad] [-Screen 1] [-Depth 7] [-Resize]
 # Pure ASCII (PS 5.1).
 param([Parameter(Mandatory)][string]$ProcessName, [Parameter(Mandatory)][string]$Out,
       [string]$Class = '', [int]$Screen = 1, [int]$Depth = 7, [switch]$Resize)

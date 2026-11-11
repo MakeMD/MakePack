@@ -419,7 +419,7 @@ const QJob = struct {
                         j.cancel_all = true;
                         return j.finish(255);
                     },
-                    // ponytail (C#): the last failure's code wins, as with classic archivers over a list of archives.
+                    // ponytail (C#): the last failure's code wins, as archivers do over a list of archives.
                     .failed => return j.finish(engine.exitCodeOf(j.run.err orelse error.Unexpected)),
                     .ok => {},
                 }

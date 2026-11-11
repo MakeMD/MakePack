@@ -503,7 +503,7 @@ pub const Compress = struct {
         const right: f32 = 98;
         const st = settings.current();
 
-        // Profiles (compression profiles): picking one fills every option below.
+        // Compression profiles: picking one fills every option below.
         D.caption(S.profile.get(), 74);
         if (D.combo("compress_profile", f.profile_names, &f.profile, left - 74)) {
             if (f.profile > 0 and f.profile <= st.Profiles.len) f.applyProfile(d, st.Profiles[f.profile - 1]);
@@ -600,7 +600,7 @@ pub const Compress = struct {
             _ = D.checkbox(S.encryptNames.get(), "compress_encrypt_names", &f.encrypt_names);
             im.ImGui_EndDisabled();
         }
-        // Typed twice while it is hidden (rule): a typo in a hidden password locks the archive for good.
+        // Typed twice while it is hidden: a typo in a hidden password locks the archive for good.
         D.caption(S.confirm.get(), 74);
         im.ImGui_BeginDisabled(!f.confirmOn());
         _ = D.input("compress_confirm", &f.confirm_box, 180, im.ImGuiInputTextFlags_Password);
@@ -634,7 +634,7 @@ pub const Compress = struct {
         // Not remembered on purpose: a forgotten tick here costs the user their files.
         _ = D.checkbox(S.deleteSources.get(), "compress_delete_sources", &f.delete_sources);
 
-        // Advanced block (Compression... / 7-Zip's right-hand column), folded away by default.
+        // Advanced block (7-Zip's right-hand column), folded away by default.
         const g = kit.ui.glyph(if (st.ShowAdvanced) 0xE70E else 0xE70D);
         var ab: [128]u8 = undefined;
         const adv_label = std.mem.printSentinel(&ab, "{s}  {s}##compress_advanced", .{ S.advancedOptions.get(), std.mem.sliceTo(&g, 0) }, 0) catch "##compress_advanced";

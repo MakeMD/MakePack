@@ -115,8 +115,8 @@ assoc.heal on the real HKCU, skipped when MAKEPACK_INSTANCE is set = a test run)
 | Id | Owned files | Spec |
 |---|---|---|
 | GUI contract (main.zig) | src/main.zig (Inbox, Ui, frame loop, OpenMain, close, drop routing), src/ui/ctx.zig | Program.Main/Post/OpenMain/MaybeExit |
-| MP-G1 main window | src/ui/main_window.zig + src/ui/mw_*.zig | MainForm.cs, Shell.cs, research notes, docs/ICONS-NEEDED.md, research notes |
-| MP-G2 dialogs + dispatch | src/ui/dialogs.zig + src/ui/dlg_*.zig | Program.Dispatch/Enqueue/Pump/Extract/Add/Gather/RunProfile/Fail, every *Form.cs but MainForm, research notes |
+| MP-G1 main window | src/ui/main_window.zig + src/ui/mw_*.zig | MainForm.cs, Shell.cs, docs/ICONS-NEEDED.md, internal research notes (not published) |
+| MP-G2 dialogs + dispatch | src/ui/dialogs.zig + src/ui/dlg_*.zig | Program.Dispatch/Enqueue/Pump/Extract/Add/Gather/RunProfile/Fail, every *Form.cs but MainForm, internal research notes (not published) |
 
 A change to ctx.zig or to a public signature in dialogs.zig / main_window.zig = a line in "Contract changes".
 The full contract is the module doc + doc comments of those three files; the essentials:

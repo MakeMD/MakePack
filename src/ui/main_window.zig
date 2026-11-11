@@ -1,5 +1,4 @@
-//! MP-G1: the main window (legacy/src/MakePack/MainForm.cs + Shell.cs; research notes, docs/ICONS-NEEDED.md,
-//! research notes/issues). Owner: MP-G1 = this file + src/ui/mw_*.zig.
+//! MP-G1: the main window (legacy/src/MakePack/MainForm.cs + Shell.cs in git history; docs/ICONS-NEEDED.md). Owner: MP-G1 = this file + src/ui/mw_*.zig.
 //! main.zig owns at most one MainWindow (Program._main). Contract with main.zig:
 //!   init(ctx, path)  (in place) Program.OpenMain's `new MainForm(archive)`: path null = LastFolder / home.
 //!   open(path)       a forwarded "<archive>" while the window exists (MainForm.OpenArchive). Deferred by the
@@ -13,7 +12,7 @@
 //! The dialogs are reached through ctx.dialogs (src/ui/dialogs.zig documents every entry point and the rules about
 //! the borrowed archive, modal(), .detach_archive / .replace_archive / .release_archive).
 //!
-//! Layout (OtherArc's): menu, 32 px toolbar with the label under each picture, Up + address bar, the folder tree
+//! Layout (classic archiver): menu, 32 px toolbar with the label under each picture, Up + address bar, the folder tree
 //! (Ctrl+T) | the list, the status bar (drive, lock, totals). State lives in mw_model.zig (also driven by the
 //! selftest); shell helpers in mw_shell.zig, drag-out in mw_drag.zig; every picture is the kit's Carbon Mint set.
 //! Automation ids (MakeKit K8): menus ###mfile..###mhelp, items ###m_<cmd>, toolbar ###tb_<name>, ###up, ##address,
@@ -307,7 +306,7 @@ pub const MainWindow = struct {
     }
 
     /// Drag-in: into an open archive the files are added; on disk a dropped archive is opened and anything else
-    /// goes to the New archive dialog (drop = Add). Our own drag-out coming back is ignored.
+    /// goes to the New archive dialog (a drop = Add). Our own drag-out coming back is ignored.
     pub fn filesDropped(mw: *MainWindow, paths: []const []const u8, pos: im.ImVec2) void {
         _ = pos;
         if (paths.len == 0 or mw.dragging or w.GetTickCount64() < mw.ignore_drops_until or mw.ctx.dialogs.modal()) return;
@@ -406,7 +405,7 @@ pub const MainWindow = struct {
         }
     }
 
-    // ---- menu (MAIN_MENU) -----------------------------------------------------------------------
+    // ---- menu (classic archiver main menu) -----------------------------------------------------------------------
 
     fn menuBar(mw: *MainWindow) void {
         if (!im.ImGui_BeginMenuBar()) return;
@@ -1010,7 +1009,7 @@ pub const MainWindow = struct {
         drawIcon16(pic, .{ .x = ix, .y = min.y }, im.ImGui_GetItemRectMax().y - min.y);
         if (current and mw.tree.sync) {
             im.ImGui_SetScrollHereY(0.5);
-            // A deep folder in a narrow tree: scroll right until its name shows (tree does the same).
+            // A deep folder in a narrow tree: scroll right until its name shows.
             const wx = im.ImGui_GetWindowPos().x;
             const label_end = ix + gap + im.ImGui_CalcTextSize(lb[0..len :0].ptr + @min(pad, 40)).x;
             if (label_end > wx + im.ImGui_GetWindowWidth() - im.ImGui_GetStyle().*.ScrollbarSize)

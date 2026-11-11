@@ -10,6 +10,7 @@ __pycache__/
 .zig-cache/
 zig-out/
 zig-pkg/
-# private research notes - kept local
-research notes
+# private research notes - kept local, never published
+.scratch/
+docs/research/
 tools/pe_res_dump.py

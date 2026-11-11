@@ -1370,11 +1370,12 @@ Test-Case 'profile_menu' {
 }
 
 # ---------- 18n ----------
-# Convert archives (ticket 14) through the real dialog: a .rar (made by console Rar.exe when it is
+# Convert archives (ticket 14) through the real dialog: a .rar (made by the console Rar.exe when it is
 # installed, else a .tar made by 7z.exe) and a .zip in one batch -> 7z. Both 7z hold the same bytes, the
 # originals stay, and the dialog closes on its own after the summary - which it only does when there were no errors.
 Test-Case 'convert_dialog' {
-    $rarExe = Join-Path $env:ProgramFiles 'OtherArc\Rar.exe'
+    $rarExe = (Get-ChildItem -Path (Join-Path $env:ProgramFiles '*\Rar.exe') -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+    if (-not $rarExe) { $rarExe = 'Rar.exe-not-installed' }
     $d = New-TestDir 'convert'
     $src = New-Dir (Join-Path $d 'payload')
     New-Dir (Join-Path $src 'sub') | Out-Null
@@ -1491,7 +1492,7 @@ Test-Case 'report_copy' {
 
 # ---------- 18q ----------
 # The scripted CLI (ticket 17): t / l / a -switches / x -y run in their own process with no window and end with
-# exit codes. Every code is checked on a real process; stdout and stderr go to files.
+# The classic archiver exit codes. Every code is checked on a real process; stdout and stderr go to files.
 function Run-Cli([string[]]$A, [int]$TimeoutMs = 60000) {
     $out = Join-Path $Root ('cli-out-' + [guid]::NewGuid().ToString('N') + '.txt')
     $err = $out + '.err'

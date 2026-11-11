@@ -306,7 +306,7 @@ pub const Find = struct {
         viewFound(d, r.path, r.inner.?);
     }
 
-    /// Find, or Stop while a search runs (same button, like classic archivers).
+    /// Find, or Stop while a search runs (same button).
     fn start(f: *Find) void {
         f.clearRows();
         f.skipped.store(0, .release);

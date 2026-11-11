@@ -260,11 +260,11 @@ test "assoc: owners - dead and live, UserChoice, Prev, forced, and unregister re
     var t = try TestHive.init();
     defer t.deinit();
     const h = t.hive();
-    const gone = t.print("\"C:\\makepack-gone-{x}\\OtherArc.exe\" \"%1\"", .{t.key.len * 7919});
+    const gone = t.print("\"C:\\makepack-gone-{x}\\Other.exe\" \"%1\"", .{t.key.len * 7919});
     try t.set(classes ++ ".zip", null, "CompressedFolder");
     try t.set(classes ++ "CompressedFolder", null, "Compressed folder"); // no open command: not ours to judge = live
-    try t.set(classes ++ ".rar", null, "OtherArc");
-    try t.set(classes ++ "OtherArc\\shell\\open\\command", null, gone); // exe gone = dead
+    try t.set(classes ++ ".rar", null, "Other.Rar");
+    try t.set(classes ++ "Other.Rar\\shell\\open\\command", null, gone); // exe gone = dead
     try t.set(classes ++ ".gz", null, "Live.App");
     try t.set(classes ++ "Live.App\\shell\\open\\command", null, t.print("\"{s}\" \"%1\"", .{exePath(&t)}));
     try t.set(file_exts ++ ".7z\\UserChoice", "ProgId", "Live.App"); // a live user choice
@@ -303,7 +303,7 @@ test "assoc: owners - dead and live, UserChoice, Prev, forced, and unregister re
     // A dead owner is replaced and remembered.
     try testing.expect((try assoc.register(h, "rar", false)).default);
     try expectStr(assoc.prog_id, t.str(classes ++ ".rar", null));
-    try expectStr("OtherArc", t.str("Software\\MakePack\\Prev", ".rar"));
+    try expectStr("Other.Rar", t.str("Software\\MakePack\\Prev", ".rar"));
     // Free: claimed; a live UserChoice is left alone unless forced; a dead one goes.
     try testing.expect((try assoc.register(h, "7z", false)).default);
     try testing.expect(t.exists(file_exts ++ ".7z\\UserChoice"));
@@ -315,10 +315,10 @@ test "assoc: owners - dead and live, UserChoice, Prev, forced, and unregister re
     try testing.expectEqual(assoc.Registered{ .default = true, .blocked = false }, try assoc.register(h, "7z", true));
     try testing.expect(!t.exists(file_exts ++ ".7z\\UserChoice"));
     _ = try assoc.register(h, "rar", true); // already ours: Prev keeps the real previous owner
-    try expectStr("OtherArc", t.str("Software\\MakePack\\Prev", ".rar"));
+    try expectStr("Other.Rar", t.str("Software\\MakePack\\Prev", ".rar"));
 
     try assoc.unregister(h, "rar");
-    try expectStr("OtherArc", t.str(classes ++ ".rar", null));
+    try expectStr("Other.Rar", t.str(classes ++ ".rar", null));
     try testing.expect(t.str("Software\\MakePack\\Prev", ".rar") == null);
     try testing.expect(t.str(classes ++ ".rar\\OpenWithProgids", assoc.prog_id) == null);
     try testing.expect(t.str("Software\\MakePack\\Capabilities\\FileAssociations", ".rar") == null);
@@ -455,17 +455,17 @@ test "assoc: --unregister (no list) removes everything and restores previous own
     defer aw.deinit();
     const env = envFor(h, &aw.writer, &aw.writer, neverAsk);
     const profiles = [_]settings.Profile{.{ .Name = "Backup", .InMenu = true }};
-    try t.set(classes ++ ".rar", null, "OtherArc"); // dead owner: claimed, remembered in Prev
+    try t.set(classes ++ ".rar", null, "Other.Rar"); // dead owner: claimed, remembered in Prev
     try t.set("Software\\RegisteredApplications", "Other", "Software\\Other\\Capabilities");
     try testing.expectEqual(@as(u8, 0), cli.registryVerb(env, &.{"--register"}, &.{})); // no list = defaults
     try testing.expectEqual(@as(u8, 0), cli.registryVerb(env, &.{ "--register", "zip" }, &.{}));
     try testing.expectEqual(@as(u8, 0), cli.registryVerb(env, &.{ "--addmenu", "on" }, &profiles));
-    try expectStr("OtherArc", t.str("Software\\MakePack\\Prev", ".rar"));
+    try expectStr("Other.Rar", t.str("Software\\MakePack\\Prev", ".rar"));
     try testing.expect(assoc.isOurs(h, "zip") and t.exists(classes ++ "*\\shell\\MakePack.P01"));
 
     try testing.expectEqual(@as(u8, 0), cli.registryVerb(env, &.{"--unregister"}, &profiles));
     try testing.expectEqualStrings("", aw.written());
-    try expectStr("OtherArc", t.str(classes ++ ".rar", null));
+    try expectStr("Other.Rar", t.str(classes ++ ".rar", null));
     for (assoc.all) |ext| {
         try testing.expect(!assoc.isOurs(h, ext));
         try testing.expect(!t.exists(t.print(classes ++ "SystemFileAssociations\\.{s}\\shell\\MakePack.Open", .{ext})));

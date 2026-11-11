@@ -595,7 +595,7 @@ pub const Model = struct {
         m.message = if (text) |t| m.gpa.dupe(u8, t) catch null else null;
     }
 
-    /// status line: the totals of the list, or of the selection when there is one.
+    /// The status line: the totals of the list, or of the selection when there is one.
     pub fn statusText(m: *const Model, buf: []u8) []const u8 {
         if (m.message) |s| return s;
         var any = false;
@@ -726,7 +726,7 @@ pub const Model = struct {
         return dir;
     }
 
-    /// What OtherArc would open inside itself: one of our archive types that really is an archive (not a .docx).
+    /// What an archiver opens inside itself: one of our archive types that really is an archive (not a .docx).
     pub fn isArchiveFile(m: *const Model, path: []const u8) bool {
         const ext = std.mem.trimStart(u8, pw.extension(path), ".");
         return types.isArchiveExt(ext) and engine.looksLikeArchive(m.io, path);

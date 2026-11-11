@@ -86,7 +86,7 @@ pub const Assoc = struct {
             im.ImGui_EndTable();
         }
 
-        // Which Explorer menu items exist at all (classic menu and the Windows 11 one), "Context menu items".
+        // Which Explorer menu items exist at all (classic menu and the Windows 11 one).
         im.ImGui_TextUnformatted(S.menuItemsLabel.get());
         // two columns: left = the archive's own verbs (0..2), right = the items on every file (3..6)
         for (0..4) |r| {

@@ -52,7 +52,7 @@ pub const ProbeResult = enum { not_archive, damaged, archive, encrypted_headers 
 
 // ---- errors (replace the string-matched exceptions) -------------------------------------------------
 
-/// Every failure a user can see. The comment is the C# exception, the OtherArc exit code (exitCodeOf) and
+/// Every failure a user can see. The comment is the C# exception, the archiver exit code (exitCodeOf) and
 /// the message (friendly). "diag" = the message has arguments: the thrower fills a Diag.
 /// Errors from std (AccessDenied, FileBusy, NoSpaceLeft...) pass through: exit 2, their name as the message.
 pub const Error = error{
@@ -110,7 +110,7 @@ pub const Error = error{
     OperationFailed,
 };
 
-/// Engine.ExitCodeOf - codes: 0 OK, 1 warning, 2 fatal, 3 CRC/damaged, 7 bad switch, 10 no files,
+/// Engine.ExitCodeOf - the classic archiver codes: 0 OK, 1 warning, 2 fatal, 3 CRC/damaged, 7 bad switch, 10 no files,
 /// 11 password, 255 cancelled.
 pub fn exitCodeOf(err: anyerror) u8 {
     return switch (err) {
@@ -2301,7 +2301,7 @@ pub fn recycleArchive(gpa: Allocator, io: Io, source: []const u8, diag: ?*Diag) 
     try recycle(gpa, @ptrCast(parts), true, diag);
 }
 
-/// Files that can run code, or open into something that can (archives, disk images): list, roughly.
+/// Files that can run code, or open into something that can (archives, disk images): the usual archiver list, roughly.
 const risky = [_][]const u8{
     "exe",  "com",  "scr",  "pif",  "cpl",  "msi",  "msp",  "msix", "appx", "appxbundle", "dll",  "ocx",  "sys",  "drv",
     "bat",  "cmd",  "ps1",  "psm1", "psd1", "vbs",  "vbe",  "js",   "jse",  "wsf",        "wsh",  "hta",  "lnk",  "url",

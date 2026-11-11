@@ -361,7 +361,7 @@ pub const blockedFmt = L(
     "Windows refused to clear its own choice for: {0}. Pick MakePack manually via 'Open with → Always'.",
 );
 
-// main window: menus (MAIN_MENU, research notes). '&' marks the WinForms mnemonic: see `plain`.
+// main window: menus (the classic archiver main menu). '&' marks the WinForms mnemonic: see `plain`.
 pub const mFile = L("&Файл", "&File");
 pub const mCommands = L("&Команди", "&Commands");
 pub const mTools = L("&Інструменти", "Tool&s");

@@ -318,7 +318,7 @@ pub const empty_seven_zip = [32]u8{
 
 /// .7z\MakePack.Archive\ShellNew with the empty archive as its data. Explorer lists it as "MakePack archive"
 /// only while .7z belongs to MakePack - under .7z\ShellNew it would be named after whoever owns .7z
-/// (measured: a second "OtherArc archive" next to own), and someone else's ShellNew could sit there.
+/// (measured: a second entry named after the current .7z owner's type, next to its own), and someone else's ShellNew could sit there.
 fn shellNew(c: Ctx, on: bool) !void {
     if (!on) return c.delTree(shell_new_key);
     const k = try reg.createKey(.hkcu, try c.path(shell_new_key ++ "\\ShellNew"), .default);

@@ -1,5 +1,5 @@
 //! MP-C: the scriptable commands (Cli.cs), Program.RegistryVerb and Program.UseConsole.
-//! No main window, no mutex: output to stdout, errors to stderr (engine.friendly), exit codes
+//! No main window, no mutex: output to stdout, errors to stderr (engine.friendly), the classic archiver exit codes
 //! (engine.exitCodeOf). A password never travels in the arguments: -p asks for it in a window, and
 //! MAKEPACK_PASSWORD serves unattended runs.
 //!   t [-p] archive                        test
