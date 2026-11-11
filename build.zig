@@ -1,4 +1,4 @@
-//! MakePack (Zig port; the C# original in legacy/ is the specification). docs/ZIG-PORT.md = package table.
+//! MakePack (Zig port; the C# 1.x original is in git history). docs/ZIG-PORT.md = package table.
 //!   zig build                  MakePack.exe + 7z.dll + 7z.sfx + MakePackShell.dll in zig-out/bin
 //!   zig build test             every unit test (src/test_all.zig)
 //!   zig build test-base | test-sevenzip | test-engine | test-platform     one package's tests

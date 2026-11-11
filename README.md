@@ -1,6 +1,6 @@
 # MakePack
 
-Легкий архіватор для Windows 10/11 — Zig + Dear ImGui (MakeKit) поверх `7z.dll` від 7-Zip. Один exe без рантайму; стара C#/WinForms-версія лежить у `legacy/`.
+Легкий архіватор для Windows 10/11 — Zig + Dear ImGui (MakeKit) поверх `7z.dll` від 7-Zip. Один exe без рантайму; стара C#/WinForms-версія 1.x — в історії git.
 
 ## Формати
 
