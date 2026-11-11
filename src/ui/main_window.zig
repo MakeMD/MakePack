@@ -15,7 +15,7 @@
 //!
 //! Layout (OtherArc's): menu, 32 px toolbar with the label under each picture, Up + address bar, the folder tree
 //! (Ctrl+T) | the list, the status bar (drive, lock, totals). State lives in mw_model.zig (also driven by the
-//! selftest); shell helpers in mw_shell.zig, pictures in mw_icons.zig, drag-out in mw_drag.zig.
+//! selftest); shell helpers in mw_shell.zig, drag-out in mw_drag.zig; every picture is the kit's Carbon Mint set.
 //! Automation ids (MakeKit K8): menus ###mfile..###mhelp, items ###m_<cmd>, toolbar ###tb_<name>, ###up, ##address,
 //! ##address_drop, rows "<name>###r", tree nodes "###t<key>", the rename box ##rename, the status "###status",
 //! the main ImGui window "<title>###main" (its name carries the title, as the OS window does).
@@ -25,7 +25,6 @@ const C = @import("ctx.zig");
 const model = @import("mw_model.zig");
 const shell = @import("mw_shell.zig");
 const drag = @import("mw_drag.zig");
-const Icons = @import("mw_icons.zig").Icons;
 const pw = @import("../platform/platform_win.zig");
 
 const Ctx = C.Ctx;
@@ -38,7 +37,8 @@ const Model = model.Model;
 const Row = model.Row;
 const Col = model.Col;
 const Allocator = std.mem.Allocator;
-const eqlI = @import("../core/types.zig").eqlIgnoreCase;
+const types = @import("../core/types.zig");
+const eqlI = types.eqlIgnoreCase;
 
 /// Application.ProductVersion. ponytail: build.zig.zon's .version, kept by hand (About only).
 const version = "2.0.0";
@@ -103,7 +103,6 @@ const Tree = struct {
 pub const MainWindow = struct {
     ctx: *Ctx,
     m: Model,
-    icons: Icons,
     watcher: shell.Watcher = .{},
     watched: ?[]u8 = null,
     tree: Tree,
@@ -151,7 +150,6 @@ pub const MainWindow = struct {
         mw.* = .{
             .ctx = ctx,
             .m = Model.init(gpa, ctx.io, start) catch @panic("out of memory"),
-            .icons = Icons.init(gpa, ctx.app.device, ctx.exe_dir),
             .tree = .{ .arena = .init(gpa) },
             .mask = gpa.dupe(u8, "*.*") catch @panic("out of memory"),
             .show_tree = s.Tree,
@@ -185,7 +183,6 @@ pub const MainWindow = struct {
         if (mw.deferred) |d| gpa.free(d);
         if (mw.edit_old) |d| gpa.free(d);
         gpa.free(mw.mask);
-        mw.icons.deinit();
         mw.tree.arena.deinit();
         mw.m.deinit();
         drag.deinit();
@@ -456,14 +453,16 @@ pub const MainWindow = struct {
             im.ImGui_EndMenu();
         }
         if (beginMenu(S.mFavorites, "mfavorites")) {
-            if (item(S.addFavorite, "m_addfav", "Ctrl+F", true)) mw.beginAddFavorite();
+            menu_gutter = true;
+            defer menu_gutter = false;
+            if (iconItem(.favorite, S.addFavorite, "m_addfav", "Ctrl+F")) mw.beginAddFavorite();
             if (item(S.organizeFavorites, "m_orgfav", null, true)) mw.ctx.dialogs.organizeFavorites();
             const favs = settings.current().Favorites;
             if (favs.len > 0) im.ImGui_Separator();
             for (favs, 0..) |f, i| {
                 var lb: [600]u8 = undefined;
                 var kb: [16]u8 = undefined;
-                const label = std.mem.printSentinel(&lb, "{s}###fav{d}", .{ f.Name, i }, 0) catch continue;
+                const label = std.mem.printSentinel(&lb, "{s}{s}###fav{d}", .{ gutter(), f.Name, i }, 0) catch continue;
                 var sc: ?[*:0]const u8 = null;
                 if (i < 10) {
                     if (std.mem.printSentinel(&kb, "Ctrl+{d}", .{(i + 1) % 10}, 0)) |z| sc = z.ptr else |_| {}
@@ -504,22 +503,23 @@ pub const MainWindow = struct {
 
     // ---- toolbar: 32 px pictures with the label under them, a set per mode ---------------------------------
 
-    const Tool = struct { name: []const u8, siid: i32, text: S.Str, tip: S.Str, key: []const u8, archive_only: bool = false };
+    /// Item id ###tb_<id>. Pictures with distinct silhouettes (the four box icons looked alike at toolbar size).
+    const Tool = struct { id: []const u8, icon: kit.icons.Name, text: S.Str, tip: S.Str, key: []const u8, archive_only: bool = false };
     const tools = [_]Tool{
-        .{ .name = "add", .siid = 105, .text = S.tbAdd, .tip = S.addCmd, .key = "Alt+A" },
-        .{ .name = "extract", .siid = 45, .text = S.tbExtract, .tip = S.extractTo, .key = "Alt+E" },
-        .{ .name = "test", .siid = 77, .text = S.tbTest, .tip = S.testCmd, .key = "Alt+T" },
-        .{ .name = "view", .siid = 1, .text = S.tbView, .tip = S.viewCmd, .key = "Alt+V" },
-        .{ .name = "delete", .siid = 31, .text = S.tbDelete, .tip = S.deleteCmd, .key = "Del" },
-        .{ .name = "find", .siid = 22, .text = S.tbFind, .tip = S.findCmd, .key = "F3" },
-        .{ .name = "info", .siid = 79, .text = S.tbInfo, .tip = S.infoCmd, .key = "Alt+I" },
-        .{ .name = "convert", .siid = 46, .text = S.tbConvert, .tip = S.convertMenu, .key = "Alt+Q" },
-        .{ .name = "report", .siid = 39, .text = S.tbReport, .tip = S.reportMenu, .key = "", .archive_only = true },
+        .{ .id = "add", .icon = .pack, .text = S.tbAdd, .tip = S.addCmd, .key = "Alt+A" },
+        .{ .id = "extract", .icon = .extract, .text = S.tbExtract, .tip = S.extractTo, .key = "Alt+E" },
+        .{ .id = "test", .icon = .ok, .text = S.tbTest, .tip = S.testCmd, .key = "Alt+T" },
+        .{ .id = "view", .icon = .view, .text = S.tbView, .tip = S.viewCmd, .key = "Alt+V" },
+        .{ .id = "delete", .icon = .delete, .text = S.tbDelete, .tip = S.deleteCmd, .key = "Del" },
+        .{ .id = "find", .icon = .find, .text = S.tbFind, .tip = S.findCmd, .key = "F3" },
+        .{ .id = "info", .icon = .info, .text = S.tbInfo, .tip = S.infoCmd, .key = "Alt+I" },
+        .{ .id = "convert", .icon = .refresh, .text = S.tbConvert, .tip = S.convertMenu, .key = "Alt+Q" },
+        .{ .id = "report", .icon = .report, .text = S.tbReport, .tip = S.reportMenu, .key = "", .archive_only = true },
     };
 
     fn toolbar(mw: *MainWindow) void {
         const s = mw.scale();
-        const icon = 32 * s;
+        const icon = kit.icons.pixels(32);
         const text_h = im.ImGui_GetTextLineHeight();
         const h = icon + text_h + 8 * s;
         im.ImGui_Dummy(.{ .x = 0, .y = 2 * s });
@@ -534,7 +534,7 @@ pub const MainWindow = struct {
             }
             var lb: [128]u8 = undefined;
             const text = t.text.get();
-            const label = std.mem.printSentinel(&lb, "{s}###tb_{s}", .{ text, t.name }, 0) catch continue;
+            const label = std.mem.printSentinel(&lb, "{s}###tb_{s}", .{ text, t.id }, 0) catch continue;
             const tw = im.ImGui_CalcTextSize(text.ptr).x;
             const bw = @max(tw, icon) + 12 * s;
             const p = im.ImGui_GetCursorScreenPos();
@@ -544,10 +544,9 @@ pub const MainWindow = struct {
                 const col = im.ImGui_GetColorU32(if (im.ImGui_IsItemActive()) im.ImGuiCol_HeaderActive else im.ImGuiCol_HeaderHovered);
                 im.ImDrawList_AddRectFilledEx(dl, p, .{ .x = p.x + bw, .y = p.y + h }, col, 4 * s, 0);
             }
-            const ix = p.x + (bw - icon) / 2;
-            if (mw.icons.tool(t.name, t.siid, true)) |tex| {
-                im.ImDrawList_AddImage(dl, tex, .{ .x = ix, .y = p.y + 3 * s }, .{ .x = ix + icon, .y = p.y + 3 * s + icon });
-            }
+            const ix = @round(p.x + (bw - icon) / 2); // whole pixels: the texture maps 1:1
+            const iy = @round(p.y + 3 * s);
+            if (kit.icons.get(t.icon, 32)) |tex| im.ImDrawList_AddImage(dl, tex, .{ .x = ix, .y = iy }, .{ .x = ix + icon, .y = iy + icon });
             im.ImDrawList_AddText(dl, .{ .x = p.x + (bw - tw) / 2, .y = p.y + 4 * s + icon }, im.ImGui_GetColorU32(im.ImGuiCol_Text), text.ptr);
             var pb: [96]u8 = undefined;
             if (t.key.len > 0) tooltip("{s} ({s})", .{ S.plain(&pb, t.tip.get()), t.key }) else tooltip("{s}", .{t.tip.get()});
@@ -578,15 +577,7 @@ pub const MainWindow = struct {
     fn addressBar(mw: *MainWindow) void {
         const s = mw.scale();
         const fh = im.ImGui_GetFrameHeight();
-        var up_clicked = false;
-        if (mw.icons.tool("up", -1, false)) |tex| {
-            up_clicked = im.ImGui_ImageButton("###up", tex, .{ .x = fh - 6 * s, .y = fh - 6 * s });
-        } else {
-            const g = kit.ui.glyph(kit.ui.icons.up);
-            var lb: [32]u8 = undefined;
-            const label = std.mem.printSentinel(&lb, "{s}###up", .{std.mem.sliceTo(&g, 0)}, 0) catch "^###up";
-            up_clicked = im.ImGui_ButtonEx(label.ptr, .{ .x = fh, .y = fh });
-        }
+        const up_clicked = kit.ui.iconButton("up", .up, 16, null);
         tooltip("{s} (Backspace)", .{S.up.get()});
         if (up_clicked) mw.nav(mw.m.up());
         im.ImGui_SameLineEx(0, 4 * s);
@@ -633,10 +624,8 @@ pub const MainWindow = struct {
         for (ds, 0..) |d, i| {
             var lb: [300]u8 = undefined;
             const label = std.mem.printSentinel(&lb, "{s}###drv{d}", .{ shell.driveName(d), i }, 0) catch continue;
-            if (mw.icons.drive(d)) |tex| {
-                im.ImGui_Image(tex, .{ .x = 16 * mw.scale(), .y = 16 * mw.scale() });
-                im.ImGui_SameLine();
-            }
+            kit.ui.icon(.drive, 16);
+            im.ImGui_SameLine();
             if (im.ImGui_Selectable(label.ptr)) {
                 mw.nav(mw.m.go(.{ .path = d }, null, true));
                 return;
@@ -704,9 +693,14 @@ pub const MainWindow = struct {
         im.ImGui_EndChild();
     }
 
-    fn rowIcon(mw: *MainWindow, r: Row) ?@import("mw_icons.zig").Tex {
-        if (r.up) return mw.icons.file("", true, null);
-        return mw.icons.file(r.name, r.folder, if (mw.m.a == null) mw.m.dir else null);
+    /// Palette pictures instead of Explorer's (colourful, off-theme): folder, archive, any other file.
+    fn rowIcon(r: Row) kit.icons.Name {
+        if (r.up or r.folder) return .folder;
+        return if (isArchiveName(r.name)) .pack else .document;
+    }
+
+    fn isArchiveName(name: []const u8) bool {
+        return types.isArchiveExt(std.mem.trimStart(u8, pw.extension(name), "."));
     }
 
     fn rowLabel(buf: []u8, r: Row) [:0]const u8 {
@@ -741,7 +735,7 @@ pub const MainWindow = struct {
             im.ImGui_TableSetupColumnEx(label.ptr, cf, wd, @backingInt(c));
         }
         im.ImGui_TableSetupScrollFreeze(0, 1);
-        im.ImGui_TableHeadersRow();
+        headersRow(cols);
         if (im.ImGui_TableGetSortSpecs()) |specs| {
             if ((specs.*.SpecsDirty or mw.sorted_ver != m.version) and specs.*.SpecsCount > 0) {
                 const spec = specs.*.Specs[0];
@@ -772,7 +766,7 @@ pub const MainWindow = struct {
                 for (cols, 0..) |c, ci| {
                     _ = im.ImGui_TableSetColumnIndex(@intCast(ci));
                     if (c == .name) {
-                        if (mw.rowIcon(r)) |tex| im.ImGui_Image(tex, .{ .x = 16 * s, .y = 16 * s }) else im.ImGui_Dummy(.{ .x = 16 * s, .y = 16 * s });
+                        kit.ui.icon(rowIcon(r), 16);
                         im.ImGui_SameLine();
                         if (mw.edit == i) {
                             mw.renameBox();
@@ -793,12 +787,32 @@ pub const MainWindow = struct {
         mw.applySelection(im.ImGui_EndMultiSelect());
     }
 
+    /// TableHeadersRow with the number columns' titles right-aligned over their right-aligned numbers.
+    fn headersRow(cols: []const Col) void {
+        im.ImGui_TableNextRowEx(im.ImGuiTableRowFlags_Headers, im.ImGui_GetTextLineHeight() + im.ImGui_GetStyle().*.CellPadding.y * 2);
+        for (cols, 0..) |c, ci| {
+            const n: c_int = @intCast(ci);
+            if (!im.ImGui_TableSetColumnIndex(n)) continue;
+            const name = im.ImGui_TableGetColumnName(n);
+            if (c == .size or c == .@"packed") {
+                const st = im.ImGui_GetStyle();
+                // the sort arrow (ImGui: FontSize * 0.65 + FramePadding.x) sits right of a sorted title
+                const arrow = if (im.ImGui_TableGetColumnFlags(n) & im.ImGuiTableColumnFlags_IsSorted != 0) @trunc(im.ImGui_GetFontSize() * 0.65 + st.*.FramePadding.x) - st.*.CellPadding.x else 0;
+                const tw = im.ImGui_CalcTextSizeEx(name, null, true, -1).x;
+                im.ImGui_SetCursorPosX(im.ImGui_GetCursorPosX() + @max(0, im.ImGui_GetContentRegionAvail().x - tw - arrow));
+            }
+            im.ImGui_PushIDInt(n); // the ids TableHeadersRow gives
+            im.ImGui_TableHeader(name);
+            im.ImGui_PopID();
+        }
+    }
+
     /// One row's selectable: selection (multi-select), focus, double click, the start of a drag-out.
     fn rowItem(mw: *MainWindow, i: usize, label: [:0]const u8, size: im.ImVec2, flags: im.ImGuiSelectableFlags) void {
         const m = &mw.m;
         const r = m.rows.items[i];
         im.ImGui_SetNextItemSelectionUserData(@intCast(i));
-        // The palette's hover tint is lighter than the selection: a hovered selected row looked unselected. Darker.
+        // The palette's hover tint is weaker than the selection: a hovered selected row looked unselected. Stronger.
         if (r.selected) im.ImGui_PushStyleColorImVec4(im.ImGuiCol_HeaderHovered, im.ImGui_GetStyleColorVec4(im.ImGuiCol_HeaderActive).*);
         _ = im.ImGui_SelectableEx(label.ptr, r.selected, flags | im.ImGuiSelectableFlags_AllowDoubleClick, size);
         if (r.selected) im.ImGui_PopStyleColor();
@@ -855,7 +869,7 @@ pub const MainWindow = struct {
             im.ImGui_SetCursorPos(.{ .x = origin.x + @as(f32, @floatFromInt(i / per_col)) * col_w, .y = origin.y + @as(f32, @floatFromInt(i % per_col)) * line });
             im.ImGui_PushIDInt(@intCast(i));
             defer im.ImGui_PopID();
-            if (mw.rowIcon(r)) |tex| im.ImGui_Image(tex, .{ .x = 16 * s, .y = 16 * s }) else im.ImGui_Dummy(.{ .x = 16 * s, .y = 16 * s });
+            kit.ui.icon(rowIcon(r), 16);
             im.ImGui_SameLine();
             if (mw.edit == i) {
                 im.ImGui_SetNextItemWidth(col_w - 24 * s);
@@ -993,9 +1007,8 @@ pub const MainWindow = struct {
         const opened = im.ImGui_TreeNodeEx(@ptrCast(&lb), flags);
         const min = im.ImGui_GetItemRectMin();
         const ix = min.x + im.ImGui_GetFontSize() + im.ImGui_GetStyle().*.FramePadding.x * 2;
-        const iy = (min.y + im.ImGui_GetItemRectMax().y) / 2 - 8 * s;
-        const tex = if (n.drive) mw.icons.drive(n.key) else if (mw.m.a != null and n.key.len == 0) mw.icons.file(n.label, false, null) else mw.icons.file("", true, null);
-        if (tex) |t| im.ImDrawList_AddImage(im.ImGui_GetWindowDrawList(), t, .{ .x = ix, .y = iy }, .{ .x = ix + 16 * s, .y = iy + 16 * s });
+        const pic: kit.icons.Name = if (n.drive) .drive else if (mw.m.a != null and n.key.len == 0) (if (mw.m.encrypted) .archive_locked else .pack) else .folder;
+        drawIcon16(pic, .{ .x = ix, .y = min.y }, im.ImGui_GetItemRectMax().y - min.y);
         if (current and mw.tree.sync) {
             im.ImGui_SetScrollHereY(0.5);
             // A deep folder in a narrow tree: scroll right until its name shows (tree does the same).
@@ -1026,17 +1039,13 @@ pub const MainWindow = struct {
         im.ImGui_Dummy(.{ .x = 0, .y = 1 * s });
         im.ImGui_IndentEx(6 * s);
         defer im.ImGui_UnindentEx(6 * s);
-        const sz: im.ImVec2 = .{ .x = 16 * s, .y = 16 * s };
         im.ImGui_AlignTextToFramePadding();
-        if (mw.icons.tool("drive", 8, false)) |t| im.ImGui_Image(t, sz) else im.ImGui_Dummy(sz);
+        lineIcon(.drive);
         const root = if (mw.m.dir.len >= 3 and mw.m.dir[1] == ':') mw.m.dir[0..3] else mw.m.dir;
         tooltip("{s}", .{root});
         if (mw.m.a != null and mw.m.encrypted) {
             im.ImGui_SameLine();
-            if (mw.icons.tool("lock", 47, false)) |t| im.ImGui_Image(t, sz) else {
-                const g = kit.ui.glyph(0xE72E); // Segoe "Lock"
-                im.ImGui_TextUnformatted(&g);
-            }
+            lineIcon(.lock);
             im.ImGui_SetItemTooltipUnformatted(S.encrypted.get().ptr);
         }
         var sb: [512]u8 = undefined;
@@ -1177,7 +1186,7 @@ pub const MainWindow = struct {
             error.NotFound => {
                 var b: [2200]u8 = undefined;
                 const path = if (mw.m.want) |x| x.saved.loc.path else "";
-                d.alert(.warning, S.app, S.fillZ(&b, S.pathNotFoundFmt.get(), .{path}));
+                d.alert(.err, S.app, S.fillZ(&b, S.pathNotFoundFmt.get(), .{path}));
                 mw.m.clearWant();
             },
             else => d.alert(.err, S.@"error".get(), engine.friendly(e, null)),
@@ -1746,6 +1755,39 @@ fn item(text: S.Str, id: []const u8, shortcut: ?[*:0]const u8, enabled: bool) bo
 fn checkItem(text: S.Str, id: []const u8, shortcut: ?[*:0]const u8, checked: bool, enabled: bool) bool {
     var plain: [160]u8 = undefined;
     var label: [200]u8 = undefined;
-    const z = std.mem.printSentinel(&label, "{s}###{s}", .{ S.plain(&plain, text.get()), id }, 0) catch return false;
+    const z = std.mem.printSentinel(&label, "{s}{s}###{s}", .{ gutter(), S.plain(&plain, text.get()), id }, 0) catch return false;
     return im.ImGui_MenuItemEx(z.ptr, shortcut, checked, enabled);
+}
+
+/// Set while drawing a menu with pictures (Favorites): every label starts after a gutter where iconItem draws
+/// its kit icon. ponytail: the gutter is spaces (ImGui's own icon column, MenuItemEx, is internal-only).
+var menu_gutter = false;
+
+fn gutter() []const u8 {
+    if (!menu_gutter) return "";
+    const spaces = "                "; // 16
+    const n = @ceil((kit.icons.pixels(16) + im.ImGui_GetStyle().*.ItemSpacing.x) / im.ImGui_CalcTextSize(" ").x);
+    return spaces[0..@min(spaces.len, @as(usize, @intFromFloat(n)))];
+}
+
+/// A 16 px kit icon centred on a frame-high line (the status bar's text sits AlignTextToFramePadding-low).
+fn lineIcon(name: kit.icons.Name) void {
+    const p = im.ImGui_GetCursorScreenPos();
+    im.ImGui_Dummy(.{ .x = kit.icons.pixels(16), .y = im.ImGui_GetFrameHeight() });
+    drawIcon16(name, p, im.ImGui_GetFrameHeight());
+}
+
+fn iconItem(icon: kit.icons.Name, text: S.Str, id: []const u8, shortcut: ?[*:0]const u8) bool {
+    const p = im.ImGui_GetCursorScreenPos();
+    const clicked = item(text, id, shortcut, true);
+    drawIcon16(icon, p, im.ImGui_GetItemRectSize().y);
+    return clicked;
+}
+
+/// At `p.x`, vertically centred in a `h` px band from `p.y`, on whole pixels (the texture maps 1:1).
+fn drawIcon16(name: kit.icons.Name, p: im.ImVec2, h: f32) void {
+    const px = kit.icons.pixels(16);
+    const x = @round(p.x);
+    const y = @round(p.y + (h - px) / 2);
+    if (kit.icons.get(name, 16)) |t| im.ImDrawList_AddImage(im.ImGui_GetWindowDrawList(), t, .{ .x = x, .y = y }, .{ .x = x + px, .y = y + px });
 }

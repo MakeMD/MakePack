@@ -13,7 +13,7 @@ const Allocator = std.mem.Allocator;
 
 pub const Info = struct {
     pub const win_id = "info";
-    pub const win_size = [2]f32{ 560, 400 };
+    pub const win_size = [2]f32{ 560, 500 }; // all ~13 rows of a 7z without a scrollbar
     gpa: Allocator,
     arena: std.heap.ArenaAllocator,
     a: *engine.Archive,

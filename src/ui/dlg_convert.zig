@@ -150,7 +150,7 @@ pub const Convert = struct {
         im.ImGui_Dummy(.{ .x = 0, .y = 6 * s });
         D.alignRight(&.{ S.convertButton.get(), S.cancel.get() });
         const busy = f.state != .idle;
-        if (D.buttonOn(!busy, S.convertButton.get(), "convert_go") or (!busy and D.enterPressed() and !im.ImGui_IsAnyItemActive())) f.go(d);
+        if (D.primary(!busy, S.convertButton.get(), "convert_go") or (!busy and D.enterPressed() and !im.ImGui_IsAnyItemActive())) f.go(d);
         im.ImGui_SameLine();
         if (D.buttonOn(!busy, S.cancel.get(), "convert_cancel") or (!busy and D.escPressed())) return false;
         return true;

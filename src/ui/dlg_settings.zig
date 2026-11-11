@@ -111,7 +111,7 @@ pub const Settings = struct {
         }
         im.ImGui_SameLine();
         D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-        if (D.button(S.ok.get(), "settings_ok") or (D.enterPressed() and !im.ImGui_IsAnyItemActive())) {
+        if (D.primary(true, S.ok.get(), "settings_ok") or (D.enterPressed() and !im.ImGui_IsAnyItemActive())) {
             f.apply(d);
             return false;
         }

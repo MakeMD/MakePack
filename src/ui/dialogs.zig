@@ -741,9 +741,27 @@ pub fn noDots(s: []const u8) []const u8 {
 pub fn button(text: []const u8, id: []const u8) bool {
     var b: [512]u8 = undefined;
     const l = lbl(&b, text, id);
-    const st = im.ImGui_GetStyle();
-    const wd = @max(88 * scale(), im.ImGui_CalcTextSizeEx(l.ptr, null, true, -1).x + st.*.FramePadding.x * 2);
-    return im.ImGui_ButtonEx(l.ptr, .{ .x = wd, .y = 0 });
+    return im.ImGui_ButtonEx(l.ptr, .{ .x = buttonWidth(l), .y = 0 });
+}
+
+/// `buttonOn` filled with the accent (kit primaryButton): the dialog's default action.
+pub fn primary(enabled: bool, text: []const u8, id: []const u8) bool {
+    im.ImGui_BeginDisabled(!enabled);
+    defer im.ImGui_EndDisabled();
+    var b: [512]u8 = undefined;
+    const l = lbl(&b, text, id);
+    return kit.ui.primaryButtonEx(l.ptr, .{ .x = buttonWidth(l), .y = 0 });
+}
+
+/// `primary` in palette danger (kit dangerButtonEx): Yes of a destructive confirm.
+pub fn danger(text: []const u8, id: []const u8) bool {
+    var b: [512]u8 = undefined;
+    const l = lbl(&b, text, id);
+    return kit.ui.dangerButtonEx(l.ptr, .{ .x = buttonWidth(l), .y = 0 });
+}
+
+fn buttonWidth(l: [:0]const u8) f32 {
+    return @max(88 * scale(), im.ImGui_CalcTextSizeEx(l.ptr, null, true, -1).x + im.ImGui_GetStyle().*.FramePadding.x * 2);
 }
 
 pub fn buttonOn(enabled: bool, text: []const u8, id: []const u8) bool {
@@ -764,7 +782,7 @@ pub fn alignRight(labels: []const []const u8) void {
 
 pub fn checkbox(text: []const u8, id: []const u8, v: *bool) bool {
     var b: [512]u8 = undefined;
-    return im.ImGui_Checkbox(lbl(&b, text, id).ptr, v);
+    return kit.ui.checkbox(lbl(&b, text, id).ptr, v);
 }
 
 /// A drop-down list: `items[sel.*]` shown; true when the user picked another one. Automation: "##<id>" (value =

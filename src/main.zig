@@ -151,7 +151,7 @@ fn gui(gpa: Allocator, io: std.Io, mode: Mode, hive: assoc.Hive) !u8 {
     const app = try kit.app.App.init(gpa, .{
         .title = S.app,
         .size = .{ 900, 600 },
-        .palette = kit.app.palettes.pack,
+        .palette = kit.app.palettes.carbon,
         .icon_id = 1,
     });
     defer app.deinit(); // runs after ui's deinit below: jobs are joined before the app goes

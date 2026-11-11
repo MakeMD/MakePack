@@ -78,7 +78,7 @@ pub const Assoc = struct {
                 _ = im.ImGui_TableNextColumn();
                 var lb: [64]u8 = undefined;
                 const l = std.mem.printSentinel(&lb, ".{s}##assoc_{s}", .{ r.ext, r.ext }, 0) catch continue;
-                _ = im.ImGui_Checkbox(l.ptr, &r.checked);
+                _ = kit.ui.checkbox(l.ptr, &r.checked);
                 _ = im.ImGui_TableNextColumn();
                 var ib: [64]u8 = undefined;
                 kit.ui.text(std.mem.print(&ib, "assoc_owner_{s}", .{r.ext}) catch "assoc_owner", r.owner, null, 0);
@@ -104,7 +104,7 @@ pub const Assoc = struct {
         im.ImGui_PopStyleColor();
 
         D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-        const ok = D.button(S.ok.get(), "assoc_ok") or D.enterPressed();
+        const ok = D.primary(true, S.ok.get(), "assoc_ok") or D.enterPressed();
         im.ImGui_SameLine();
         const cancel = D.button(S.cancel.get(), "assoc_cancel") or D.escPressed();
         f.rest_h = im.ImGui_GetCursorPosY() + im.ImGui_GetStyle().*.WindowPadding.y - table_h;

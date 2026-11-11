@@ -54,21 +54,9 @@ pub const Msg = struct {
         return m.title_s;
     }
 
-    pub fn body(m: *Msg, d: *Dialogs) bool {
+    pub fn body(m: *Msg, _: *Dialogs) bool {
         const s = D.scale();
-        const pal = d.ctx.app.cfg.palette;
-        const icon: u21, const col: u32 = switch (m.kind) {
-            .info => .{ kit.ui.icons.info, pal.accent },
-            .warning => .{ kit.ui.icons.warning, 0xC77700 },
-            .err => .{ kit.ui.icons.err, pal.danger },
-            .question => .{ kit.ui.icons.question, pal.accent },
-        };
-        const g = kit.ui.glyph(icon);
-        im.ImGui_PushFontFloat(null, im.ImGui_GetStyle().*.FontSizeBase * 1.75);
-        im.ImGui_PushStyleColorImVec4(im.ImGuiCol_Text, kit.app.color(col, 1));
-        im.ImGui_TextUnformatted(&g);
-        im.ImGui_PopStyleColor();
-        im.ImGui_PopFont();
+        kit.ui.icon(kit.ui.msgIcon(m.kind), 32); // the kit messageBox's pictures
         im.ImGui_SameLineEx(0, 14 * s);
         const wrap = @min(480 * s, @max(300 * s, im.ImGui_CalcTextSizeEx(m.body_text.ptr, m.body_text.ptr + m.body_text.len, false, -1).x + 4));
         kit.ui.text("msg_text", m.body_text, null, wrap);
@@ -82,16 +70,18 @@ pub const Msg = struct {
         switch (m.buttons) {
             .ok => {
                 D.alignRight(&.{S.ok.get()});
-                if (D.button(S.ok.get(), "msg_ok")) answer = 0;
+                if (D.primary(true, S.ok.get(), "msg_ok")) answer = 0;
                 if (im.ImGui_IsWindowAppearing()) im.ImGui_SetItemDefaultFocus();
                 if (D.enterPressed() or D.escPressed()) answer = 0;
             },
             .yes_no => {
                 D.alignRight(&.{ yes, no });
-                if (D.button(yes, "msg_yes")) answer = 0;
+                // a destructive confirm (.danger): Yes is red, No stays plain (one filled button per box)
+                const danger = m.kind == .danger;
+                if (if (danger) D.danger(yes, "msg_yes") else if (m.default_no) D.button(yes, "msg_yes") else D.primary(true, yes, "msg_yes")) answer = 0;
                 if (!m.default_no and im.ImGui_IsWindowAppearing()) im.ImGui_SetItemDefaultFocus();
                 im.ImGui_SameLine();
-                if (D.button(no, "msg_no")) answer = 1;
+                if (if (m.default_no and !danger) D.primary(true, no, "msg_no") else D.button(no, "msg_no")) answer = 1;
                 if (m.default_no and im.ImGui_IsWindowAppearing()) im.ImGui_SetItemDefaultFocus();
                 if (D.escPressed()) answer = 1;
             },
@@ -171,7 +161,7 @@ pub const Password = struct {
         }
         const entered = D.input("password_input", &p.box, 336, im.ImGuiInputTextFlags_Password | im.ImGuiInputTextFlags_EnterReturnsTrue);
         D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-        var ok = D.button(S.ok.get(), "password_ok") or entered;
+        var ok = D.primary(true, S.ok.get(), "password_ok") or entered;
         im.ImGui_SameLine();
         const cancel = D.button(S.cancel.get(), "password_cancel") or D.escPressed();
         if (!entered and D.enterPressed()) ok = true;
@@ -260,7 +250,7 @@ pub const Name = struct {
         }
         D.alignRight(&.{ S.ok.get(), S.cancel.get() });
         const ok_on = n.valid();
-        var ok = D.buttonOn(ok_on, S.ok.get(), "name_ok");
+        var ok = D.primary(ok_on, S.ok.get(), "name_ok");
         im.ImGui_SameLine();
         if (D.button(S.cancel.get(), "name_cancel") or D.escPressed()) return false;
         if ((entered or D.enterPressed()) and ok_on) ok = true;
@@ -390,7 +380,7 @@ pub fn cliAskPassword(gpa: Allocator, title: []const u8, label: ?[]const u8) ?[]
         .title = title,
         .size = .{ 380, 150 },
         .min_size = .{ 300, 120 },
-        .palette = kit.app.palettes.pack,
+        .palette = kit.app.palettes.carbon,
         .icon_id = 1,
     }) catch return null;
     app.run(.{ .user = &st, .frame = cliFrame });
@@ -415,7 +405,7 @@ fn cliFrame(app: *kit.app.App) void {
     im.ImGui_SetNextItemWidth(-1);
     const entered = im.ImGui_InputText("##password_input", &st.box, st.box.len, im.ImGuiInputTextFlags_Password | im.ImGuiInputTextFlags_EnterReturnsTrue);
     D.alignRight(&.{ S.ok.get(), S.cancel.get() });
-    if (D.button(S.ok.get(), "password_ok") or entered) st.answer = true;
+    if (D.primary(true, S.ok.get(), "password_ok") or entered) st.answer = true;
     im.ImGui_SameLine();
     if (D.button(S.cancel.get(), "password_cancel") or im.ImGui_IsKeyPressed(im.ImGuiKey_Escape)) st.answer = false;
     if (st.answer != null) app.quit();

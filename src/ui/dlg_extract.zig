@@ -114,7 +114,7 @@ pub const Form = struct {
         im.ImGui_Dummy(.{ .x = 0, .y = 8 * s });
         const ok_text = D.noDots(S.extract.get());
         D.alignRight(&.{ ok_text, S.cancel.get() });
-        var ok = D.button(ok_text, "extract_ok");
+        var ok = D.primary(true, ok_text, "extract_ok");
         im.ImGui_SameLine();
         if (D.button(S.cancel.get(), "extract_cancel") or D.escPressed()) return false;
         if (D.enterPressed()) ok = true;

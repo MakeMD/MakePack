@@ -93,7 +93,7 @@ pub const Ctx = struct {
     gpa: Allocator,
     io: std.Io,
     app: *kit.app.App,
-    /// The folder of MakePack.exe (7z.dll, 7z.sfx, icons\<name>.png overrides).
+    /// The folder of MakePack.exe (7z.dll, 7z.sfx).
     exe_dir: []const u8,
     /// Registry root for every Assoc call from the GUI. Tests: MAKEPACK_HIVE = "Software\MakePackTest-<random>\"
     /// (never the real HKCU MakePack / Classes / RegisteredApplications).

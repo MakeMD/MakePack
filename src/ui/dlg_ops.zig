@@ -383,7 +383,7 @@ pub fn deleteFiles(d: *Dialogs, paths: []const []const u8, nuke: bool) void {
         S.fillZ(&wb, S.itemsFmt.get(), .{paths.len});
     var mb: [1024]u8 = undefined;
     const text = S.fillZ(&mb, if (nuke) S.confirmNukeFmt.get() else S.confirmRecycleFmt.get(), .{what});
-    P.message(d, if (nuke) .warning else .question, S.app, text, .yes_no, true, &t.reply);
+    P.message(d, if (nuke) .danger else .question, S.app, text, .yes_no, true, &t.reply);
     D.addTask(d, RecycleTask, t, true);
 }
 

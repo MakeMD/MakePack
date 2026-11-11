@@ -511,6 +511,7 @@ pub const Compress = struct {
         im.ImGui_SameLine();
         if (D.button(S.saveProfile.get(), "compress_save_profile")) f.saveProfileStart(d);
 
+        im.ImGui_Dummy(.{ .x = 0, .y = 2 * s }); // air between the profile row and the list's caption
         im.ImGui_TextUnformatted(S.inputs.get());
         const list_top = im.ImGui_GetCursorPosY();
         if (im.ImGui_BeginListBox("##compress_inputs", .{ .x = left * s, .y = 116 * s })) {
@@ -646,7 +647,7 @@ pub const Compress = struct {
         im.ImGui_Dummy(.{ .x = 0, .y = 4 * s });
         D.alignRight(&.{ S.create.get(), S.cancel.get() });
         const busy = f.state != .idle;
-        if (D.buttonOn(f.volumeSize() != null and !busy, S.create.get(), "compress_create")) f.doCreate(d);
+        if (D.primary(f.volumeSize() != null and !busy, S.create.get(), "compress_create")) f.doCreate(d);
         im.ImGui_SameLine();
         if (D.button(S.cancel.get(), "compress_cancel")) f.done = true;
         if (!busy and D.escPressed()) f.done = true;

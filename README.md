@@ -18,9 +18,9 @@
 - **Виділення і буфер.** Num+ / Num− — виділити або зняти виділення за маскою (`*.txt;*.md`), Num* — інвертувати. Ctrl+C / Ctrl+V працюють з Провідником; з архіву файли спершу розпаковуються в temp.
 - **Обране.** Ctrl+F додає теку чи архів, Ctrl+1…0 відкривають перші десять записів.
 - **Вигляд.** Ctrl+H — плаский список усіх файлів архіву; ще є режими «Список» і «Таблиця». Розмір вікна, дерево, режим і остання тека запам'ятовуються.
-- **Іконки тулбара** поки стокові, Windows. Свої іконки кладуться PNG-файлами в `icons\` поруч з exe, перезбирати нічого не треба; список потрібних — [docs/ICONS-NEEDED.md](docs/ICONS-NEEDED.md).
+- **Тема й іконки.** Темна тема Carbon Mint і набір іконок з MakeKit, іконки вбудовані в exe. PNG у теці `icons\` поруч з exe підміняє будь-яку з них без перезбирання; список — [docs/ICONS-NEEDED.md](docs/ICONS-NEEDED.md).
 
-Перевірки: `zig build test`, `MakePack.exe --selftest`, `tools\bugtest.ps1` (чорна скринька: CLI і вікна через автоматизацію MakeKit, у пісочниці — власні `MAKEPACK_INSTANCE`, `MAKEPACK_SETTINGS`, `MAKEPACK_REGROOT`, тека в `%TEMP%`; справжні мишу й клавіатуру не чіпає, вікна — на моніторі `-Screen`, типово 1), `tools\guismoke.ps1` (знімки головного вікна після натискань), `tools\settingstest.ps1` (збереження налаштувань). `tools\dragtest.ps1` рухає справжню мишу — лише вручну. `tools\uiadump.ps1` — UIA-дерево + скріншот будь-якого чужого вікна (ImGui-вікна MakePack UIA не бачить).
+Перевірки: `zig build test`, `MakePack.exe --selftest`, `tools\bugtest.ps1` (чорна скринька: CLI і вікна через автоматизацію MakeKit, у пісочниці — власні `MAKEPACK_INSTANCE`, `MAKEPACK_SETTINGS`, `MAKEPACK_REGROOT`, тека в `%TEMP%`; справжні мишу й клавіатуру не чіпає, вікна — на моніторі `-Screen`, типово 1), `tools\guismoke.ps1` (знімки головного вікна після натискань), `tools\shots.ps1` (знімки всіх вікон і діалогів для перевірки теми → `zig-out\shots`), `tools\settingstest.ps1` (збереження налаштувань). `tools\dragtest.ps1` рухає справжню мишу — лише вручну. `tools\uiadump.ps1` — UIA-дерево + скріншот будь-якого чужого вікна (ImGui-вікна MakePack UIA не бачить).
 
 ## Збірка
 

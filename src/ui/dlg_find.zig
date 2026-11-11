@@ -268,13 +268,13 @@ pub const Find = struct {
 
         const find_text = if (f.running) S.stop.get() else S.tbFind.get();
         D.alignRight(&.{ find_text, S.locate.get(), S.tbView.get(), S.close.get() });
-        if (D.button(find_text, "find_go") or (D.enterPressed() and !f.running)) {
+        if (D.primary(true, find_text, "find_go") or (D.enterPressed() and !f.running)) {
             if (f.running) f.job.cancel() else f.start();
         }
         im.ImGui_SameLine();
-        if (D.button(S.locate.get(), "find_locate")) f.locate(d);
+        if (D.buttonOn(f.sel != null, S.locate.get(), "find_locate")) f.locate(d); // both act on the selected hit
         im.ImGui_SameLine();
-        if (D.button(S.tbView.get(), "find_view")) f.view(d);
+        if (D.buttonOn(f.sel != null, S.tbView.get(), "find_view")) f.view(d);
         im.ImGui_SameLine();
         if (D.button(S.close.get(), "find_close") or D.escPressed()) return false;
         return true;
