@@ -613,7 +613,7 @@ pub const Compress = struct {
         // volumes: an editable drop-down
         D.caption(S.volumes.get(), 74);
         im.ImGui_BeginDisabled(!f.volumesOn());
-        _ = D.input("compress_volumes", &f.volumes, 180 - 24, 0);
+        _ = D.input("compress_volumes", &f.volumes, 180 - kit.ui.dropArrowWidth() / s, 0);
         im.ImGui_SameLineEx(0, 0);
         var picked: ?usize = null;
         D.dropDownArrow("compress_volume_presets", &volume_presets, &picked);

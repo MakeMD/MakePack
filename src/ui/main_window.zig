@@ -576,7 +576,6 @@ pub const MainWindow = struct {
 
     fn addressBar(mw: *MainWindow) void {
         const s = mw.scale();
-        const fh = im.ImGui_GetFrameHeight();
         const up_clicked = kit.ui.iconButton("up", .up, 16, null);
         tooltip("{s} (Backspace)", .{S.up.get()});
         if (up_clicked) mw.nav(mw.m.up());
@@ -588,7 +587,7 @@ pub const MainWindow = struct {
             @memcpy(mw.address[0..n], t[0..n]);
             mw.address[n] = 0;
         }
-        im.ImGui_SetNextItemWidth(im.ImGui_GetContentRegionAvail().x - fh - 6 * s);
+        im.ImGui_SetNextItemWidth(im.ImGui_GetContentRegionAvail().x - kit.ui.dropArrowWidth());
         const enter = im.ImGui_InputText("##address", &mw.address, mw.address.len, im.ImGuiInputTextFlags_EnterReturnsTrue);
         mw.address_active = im.ImGui_IsItemActive();
         if (enter) {
@@ -600,8 +599,8 @@ pub const MainWindow = struct {
             mw.focus_list = true;
             mw.skip_keys = true;
         }
-        im.ImGui_SameLineEx(0, 2 * s);
-        if (im.ImGui_ArrowButton("##address_drop", im.ImGuiDir_Down)) mw.open_drives = true;
+        im.ImGui_SameLineEx(0, 0); // the arrow joins the box
+        if (kit.ui.dropArrow("##address_drop", im.ImGui_IsPopupOpen("##drives", 0))) mw.open_drives = true;
         if (mw.open_drives) {
             mw.open_drives = false;
             _ = im.ImGui_OpenPopup("##drives", 0);
