@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
 
     // ---- MakePack.exe (GUI subsystem; icon 1 + the kit manifest from app.rc)
     const exe_mod = b.createModule(.{ .root_source_file = b.path("src/main.zig"), .target = target, .optimize = optimize, .imports = imports });
-    exe_mod.addWin32ResourceFile(.{ .file = b.path("app.rc"), .include_paths = &.{kit_dep.namedLazyPath("res")} });
+    exe_mod.addWin32ResourceFile(.{ .file = b.path("app.rc"), .include_paths = &.{kit_dep.namedLazyPath("res")}, .flags = versionDefines(b) });
     const exe = b.addExecutable(.{ .name = "MakePack", .root_module = exe_mod });
     exe.subsystem = .windows;
     b.installArtifact(exe);
@@ -78,4 +78,16 @@ fn cppExe(b: *std.Build, name: []const u8, src: []const u8, target: std.Build.Re
     const exe = b.addExecutable(.{ .name = name, .root_module = mod });
     exe.mingw_unicode_entry_point = true;
     return exe;
+}
+
+/// app.rc's VERSIONINFO numbers and string, from build.zig.zon's .version (the one place it is kept).
+fn versionDefines(b: *std.Build) []const []const u8 {
+    const ver = @import("build.zig.zon").version;
+    const v = std.SemanticVersion.parse(ver) catch @panic("build.zig.zon .version is not semver");
+    return b.allocator.dupe([]const u8, &.{
+        b.fmt("/DVER_MAJOR={d}", .{v.major}),
+        b.fmt("/DVER_MINOR={d}", .{v.minor}),
+        b.fmt("/DVER_PATCH={d}", .{v.patch}),
+        b.fmt("/DVER_STR=\"{s}\"", .{ver}),
+    }) catch @panic("OOM");
 }

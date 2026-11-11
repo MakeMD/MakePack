@@ -1,3 +1,30 @@
-// MakePack.exe resources: icon 1 (kit.app.Config.icon_id = 1) + the MakeKit manifest (found via the kit's res/ include path).
+// MakePack.exe resources: icon 1 (kit.app.Config.icon_id = 1) + the MakeKit manifest (found via the kit's res/ include path)
+// + VERSIONINFO; build.zig passes VER_MAJOR/MINOR/PATCH/STR from build.zig.zon's .version.
 1 ICON "icon/makepack.ico"
 1 24 "app.manifest"
+
+1 VERSIONINFO
+FILEVERSION VER_MAJOR, VER_MINOR, VER_PATCH, 0
+PRODUCTVERSION VER_MAJOR, VER_MINOR, VER_PATCH, 0
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "MakeMD"
+            VALUE "FileDescription", "MakePack archiver"
+            VALUE "FileVersion", VER_STR
+            VALUE "InternalName", "MakePack"
+            VALUE "LegalCopyright", "Copyright (c) 2026 MakeMD, MIT License"
+            VALUE "OriginalFilename", "MakePack.exe"
+            VALUE "ProductName", "MakePack"
+            VALUE "ProductVersion", VER_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
