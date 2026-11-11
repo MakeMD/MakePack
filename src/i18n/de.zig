@@ -284,6 +284,17 @@ pub const t: en.Strings = .{
     .about = "Info über MakePack",
     .aboutText = "Ein Archivierungsprogramm auf Basis von 7z.dll (7-Zip, LGPL).\nMakeMD",
 
+    // Updates
+    .checkUpdates = "Nach Updates suchen",
+    .updateCheckAuto = "Automatisch nach Updates suchen",
+    .updateAvailableFmt = "Version {0} ist verfügbar",
+    .updateNow = "Jetzt aktualisieren",
+    .releaseNotes = "Versionshinweise",
+    .updateLater = "Später",
+    .upToDateFmt = "MakePack {0} ist die neueste Version.",
+    .updateFailedFmt = "Die Suche nach Updates ist fehlgeschlagen.\n\n{0}",
+    .updateBusy = "MakePack arbeitet noch. Aktualisieren Sie, sobald der laufende Vorgang abgeschlossen ist.",
+
     // main window: toolbar (short labels under the icons)
     .tbAdd = "Hinzufügen",
     .tbExtract = "Entpacken",

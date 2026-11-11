@@ -36,6 +36,7 @@ pub const Settings = struct {
     motw: usize,
     /// The language picked here: applied and saved at once (no OK needed); Cancel does not undo it.
     lang: ?kit.i18n.Lang,
+    update_check: bool,
     list: std.ArrayList(settings.Profile) = .empty,
     sel: usize = 0,
     reply: Reply = .{},
@@ -71,6 +72,8 @@ pub const Settings = struct {
         const motws = [_][]const u8{ S.tr().motwNever, S.tr().motwRisky, S.tr().motwAll };
         _ = D.combo("settings_motw", &motws, &f.motw, 294);
         D.tooltip(S.tr().motwTip);
+        var ub: [256]u8 = undefined;
+        _ = kit.ui.checkbox(D.lbl(&ub, S.tr().updateCheckAuto, "settings_updates").ptr, &f.update_check);
 
         im.ImGui_TextUnformatted(S.tr().profiles);
         const top = im.ImGui_GetCursorPosY();
@@ -165,6 +168,7 @@ pub const Settings = struct {
         }
         s.Profiles = list;
         s.Motw = @fromBackingInt(@intCast(f.motw));
+        s.UpdateCheck = f.update_check;
         settings.commit();
         // renamed, deleted or (un)ticked "in menu": Explorer's items follow
         C.assoc.applyProfiles(d.ctx.hive, s.Profiles) catch {};
@@ -198,7 +202,7 @@ pub fn openSettings(d: *Dialogs) void {
     const gpa = d.ctx.gpa;
     const f = gpa.create(Settings) catch return;
     const s = settings.current();
-    f.* = .{ .gpa = gpa, .arena = .init(gpa), .motw = @backingInt(s.Motw), .lang = s.lang() };
+    f.* = .{ .gpa = gpa, .arena = .init(gpa), .motw = @backingInt(s.Motw), .lang = s.lang(), .update_check = s.UpdateCheck };
     D.setText(&f.folder, s.ArchiveFolder orelse "");
     // Edited on a copy and written back on OK: Cancel leaves the profiles as they were.
     for (s.Profiles) |p| {

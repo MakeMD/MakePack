@@ -163,6 +163,7 @@ fn gui(gpa: Allocator, io: std.Io, mode: Mode, hive: assoc.Hive) !u8 {
     ui.ctx.dialogs = &ui.dialogs;
     defer {
         if (ui.mw) |*m| m.deinit();
+        ui.ctx.updates.deinit(gpa);
         ui.dialogs.deinit();
         var left = ui.ctx.takeRequests();
         for (left.items) |r| r.deinit(gpa);
@@ -202,6 +203,8 @@ fn frame(app: *kit.app.App) void {
     };
     reqs.deinit(gpa);
 
+    ui.ctx.updates.poll(&ui.ctx);
+
     // 3. + 4.
     if (ui.mw) |*m| if (!m.draw()) closeMain(ui);
     ui.dialogs.draw();
@@ -218,6 +221,7 @@ fn openMain(ui: *Ui, path: ?[]const u8) void {
         ui.mw = @as(MainWindow, undefined);
         ui.mw.?.init(&ui.ctx, path);
         ui.ctx.has_main_window = true;
+        ui.ctx.updates.daily(&ui.ctx);
     }
     ui.ctx.raise();
 }

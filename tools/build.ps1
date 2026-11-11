@@ -3,22 +3,26 @@
 # Output: dist\app (what the installer ships), dist\shell, dist\MakePack-Setup-<version>.exe.
 # -NoSign: the shell package stays unsigned (no PFX / .env needed; for a dry run - such a package does not install).
 # ponytail: no msbuild targets, no CI matrix, exe not signed (only the shell package is) - one script, native calls.
-param([string]$Version = "2.0.0", [switch]$NoSign)
+# -Version defaults to build.zig.zon's .version (the one place it is kept) and must match it.
+param([string]$Version = '', [switch]$NoSign)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 $zig = Join-Path $env:LOCALAPPDATA 'Programs\zig\0.17.1\zig.exe'
 if (-not (Test-Path $zig)) { throw "Zig 0.17.1 not found at $zig" }
+$zon = [regex]::Match((Get-Content (Join-Path $root 'build.zig.zon') -Raw), '\.version\s*=\s*"([^"]+)"').Groups[1].Value
+if (-not $Version) { $Version = $zon }
+if ($Version -ne $zon) { throw "-Version $Version differs from build.zig.zon .version $zon (the exe reports that one)" }
 
-# 1. MakePack.exe + 7z.dll + 7z.sfx, staged into dist\app (no .pdb; the shell DLL comes from step 3).
+# 1. MakePack.exe + MakeUpdate.exe + 7z.dll + 7z.sfx, staged into dist\app (no .pdb; the shell DLL comes from step 3).
 Write-Host "[1/3] zig build -Doptimize=ReleaseSafe ($Version)" -ForegroundColor Cyan
 & $zig build -Doptimize=ReleaseSafe
 if ($LASTEXITCODE) { throw "zig build failed (exit $LASTEXITCODE)" }
 $app = Join-Path $root 'dist\app'
 if (Test-Path $app) { Remove-Item $app -Recurse -Force }
 New-Item -ItemType Directory -Force $app | Out-Null
-foreach ($f in 'MakePack.exe', '7z.dll', '7z.sfx') { Copy-Item (Join-Path $root "zig-out\bin\$f") $app }
+foreach ($f in 'MakePack.exe', 'MakeUpdate.exe', '7z.dll', '7z.sfx') { Copy-Item (Join-Path $root "zig-out\bin\$f") $app }
 
 # 2. Win11 top-level context menu: DLL + sparse package into dist\shell (signing needs tools\new_cert.ps1 once).
 Write-Host "[2/3] shell extension" -ForegroundColor Cyan

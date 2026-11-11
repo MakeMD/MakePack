@@ -47,6 +47,7 @@ $RegHK   = 'Registry::HKEY_CURRENT_USER\' + $RegRoot          # = HKCU as the ap
 $env:MAKEPACK_SETTINGS  = Join-Path $Root 'settings.json'
 $env:MAKEPACK_REGROOT   = $RegRoot
 $env:MAKEKIT_AUTOMATION = '1'
+$env:MAKEKIT_NO_UPDATE = '1'   # no update check from any test process (MakeKit K11)
 $env:MAKEKIT_DISPLAY    = '\\.\DISPLAY' + $Screen
 $env:MAKEKIT_LANG       = $Lang
 foreach ($v in 'MAKEPACK_HIVE', 'MAKEPACK_PASSWORD', 'MAKEPACK_INSTANCE') { Remove-Item ('Env:\' + $v) -ErrorAction SilentlyContinue }

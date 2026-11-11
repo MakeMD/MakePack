@@ -105,6 +105,12 @@ pub const Settings = struct {
     Favorites: []const Favorite = &.{},
     /// Named option sets for the New archive dialog and `a --profile`; at most one IsDefault.
     Profiles: []const Profile = &.{},
+    /// "Check for updates automatically" (src/ui/updates.zig): at most once a day, after the main window opens.
+    UpdateCheck: bool = true,
+    /// Unix seconds of the last check attempt (also a failed one); 0 = never.
+    LastUpdateCheck: i64 = 0,
+    /// The version whose banner got "Later": the daily check stays quiet about it ("" = none).
+    UpdateSkip: []const u8 = "",
 
     /// The saved language choice; null = Auto (also for an unknown code).
     pub fn lang(s: *const Settings) ?kit.i18n.Lang {
@@ -394,6 +400,7 @@ test "defaults are the C# initializers" {
     try tt.expectEqual(types.MotwPolicy.Risky, s.Motw);
     try tt.expect(s.ArchiveFolder == null and s.Window == null and s.Favorites.len == 0 and s.Profiles.len == 0);
     try tt.expect(s.lang() == null); // "Auto"
+    try tt.expect(s.UpdateCheck and s.LastUpdateCheck == 0 and s.UpdateSkip.len == 0); // updates on by default
     try tt.expectEqual(kit.i18n.Lang.pl, (Settings{ .Language = "pl" }).lang().?);
     const p: Profile = .{ .Name = "Fresh" };
     try tt.expectEqual(types.CompressionMethod.Default, p.Method); // default(enum) would be Copy

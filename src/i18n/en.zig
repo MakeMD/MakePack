@@ -314,6 +314,22 @@ pub const Strings = struct {
     about: [:0]const u8,
     aboutText: [:0]const u8,
 
+    // updates (src/ui/updates.zig): Help menu item, Settings checkbox, the banner above the toolbar, the alerts
+    checkUpdates: [:0]const u8,
+    updateCheckAuto: [:0]const u8,
+    /// Banner text: {0} = the new version ("2.1.1").
+    updateAvailableFmt: [:0]const u8,
+    /// Banner buttons (sized to the text): install / open the release page / hide until the next version.
+    updateNow: [:0]const u8,
+    releaseNotes: [:0]const u8,
+    updateLater: [:0]const u8,
+    /// Help > Check for updates found nothing newer: {0} = this version.
+    upToDateFmt: [:0]const u8,
+    /// Help > Check for updates failed: {0} = the reason (English, from MakeUpdate: "no connection (...)").
+    updateFailedFmt: [:0]const u8,
+    /// "Update now" while an archive operation still runs.
+    updateBusy: [:0]const u8,
+
     // main window: toolbar (short labels under the icons)
     tbAdd: [:0]const u8,
     tbExtract: [:0]const u8,
@@ -664,6 +680,17 @@ pub const t: Strings = .{
     .folderTree = "Folder tree",
     .about = "About MakePack",
     .aboutText = "An archiver on 7z.dll (7-Zip, LGPL).\nMakeMD",
+
+    // updates
+    .checkUpdates = "Check for updates",
+    .updateCheckAuto = "Check for updates automatically",
+    .updateAvailableFmt = "Version {0} is available",
+    .updateNow = "Update now",
+    .releaseNotes = "Release notes",
+    .updateLater = "Later",
+    .upToDateFmt = "MakePack {0} is the latest version.",
+    .updateFailedFmt = "Could not check for updates.\n\n{0}",
+    .updateBusy = "MakePack is still working. Update once the current operation has finished.",
 
     // main window: toolbar
     .tbAdd = "Add",

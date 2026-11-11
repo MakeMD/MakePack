@@ -39,8 +39,8 @@ const Allocator = std.mem.Allocator;
 const types = @import("../core/types.zig");
 const eqlI = types.eqlIgnoreCase;
 
-/// Application.ProductVersion. ponytail: build.zig.zon's .version, kept by hand (About only).
-const version = "2.0.0";
+/// Application.ProductVersion: build.zig.zon's .version.
+const version = @import("updates.zig").version;
 
 /// What an asynchronous answer (a ctx.Token) is for.
 const Pending = union(enum) {
@@ -351,6 +351,7 @@ pub const MainWindow = struct {
             im.ImGui_BeginDisabled(true);
         }
         mw.menuBar();
+        mw.ctx.updates.banner(mw.ctx);
         im.ImGui_IndentEx(6 * mw.scale());
         mw.toolbar();
         mw.addressBar();
@@ -485,6 +486,7 @@ pub const MainWindow = struct {
             im.ImGui_EndMenu();
         }
         if (beginMenu(S.tr().mHelp, "mhelp")) {
+            if (item(S.tr().checkUpdates, "m_updates", null, true)) mw.ctx.updates.checkNow(mw.ctx);
             if (item(S.tr().about, "m_about", null, true)) {
                 var b: [512]u8 = undefined;
                 const text = std.mem.print(&b, "{s} {s}\n\n{s}", .{ S.app, version, S.tr().aboutText }) catch S.app;

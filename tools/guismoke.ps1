@@ -14,6 +14,7 @@ param([Parameter(Mandatory)][string]$Out, [string]$Arg = '', [string[]]$Steps = 
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\..\MakeKit\tools\imgui-auto.ps1')
+$env:MAKEKIT_NO_UPDATE = '1'   # no update check from any test process (MakeKit K11)
 
 # Old SendInput names -> ImGuiKey names (the automation 'key' command).
 $names = @{ enter = 'Enter'; esc = 'Escape'; back = 'Backspace'; tab = 'Tab'; space = 'Space'; del = 'Delete'; ins = 'Insert'

@@ -16,6 +16,7 @@
 param([string]$Exe = "$PSScriptRoot\..\zig-out\bin\MakePack.exe", [ValidateRange(1, 9)][int]$Screen = 1)
 
 $ErrorActionPreference = 'Stop'
+$env:MAKEKIT_NO_UPDATE = '1'   # no update check from any test process (MakeKit K11)
 if (-not ('Mp.Mouse' -as [type])) {
     Add-Type -Namespace Mp -Name Mouse -UsingNamespace System.Text, System.Threading, System.Collections.Generic -MemberDefinition @'
 [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint data, flags, time; public IntPtr extra; }

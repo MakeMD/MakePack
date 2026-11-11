@@ -18,6 +18,7 @@ pub const engine = @import("../core/engine.zig");
 pub const assoc = @import("../platform/assoc.zig");
 pub const Dialogs = @import("dialogs.zig").Dialogs;
 pub const platform_dispatch = @import("../platform/platform_dispatch.zig");
+pub const Updates = @import("updates.zig").Updates;
 
 const Allocator = std.mem.Allocator;
 
@@ -107,6 +108,8 @@ pub const Ctx = struct {
     /// Program._exit: the process exit code (the last failure's code wins; 255 = cancelled).
     exit_code: u8 = 0,
     requests: std.ArrayList(Request) = .empty,
+    /// Update check + banner (updates.zig); main.zig polls it every frame and deinits it before the app.
+    updates: Updates = .{},
 
     /// UI thread only. Takes ownership of `r`'s strings (freed here if the queue cannot grow).
     pub fn post(c: *Ctx, r: Request) void {

@@ -286,6 +286,17 @@ pub const t: en.Strings = .{
     .about = "Про MakePack",
     .aboutText = "Архіватор на 7z.dll (7-Zip, LGPL).\nMakeMD",
 
+    // оновлення
+    .checkUpdates = "Перевірити оновлення",
+    .updateCheckAuto = "Автоматично перевіряти оновлення",
+    .updateAvailableFmt = "Доступна версія {0}",
+    .updateNow = "Оновити зараз",
+    .releaseNotes = "Що нового",
+    .updateLater = "Пізніше",
+    .upToDateFmt = "MakePack {0} — найновіша версія.",
+    .updateFailedFmt = "Не вдалося перевірити оновлення.\n\n{0}",
+    .updateBusy = "MakePack ще виконує операцію. Оновіть, коли вона завершиться.",
+
     // main window: toolbar
     .tbAdd = "Додати",
     .tbExtract = "Розпакувати в",

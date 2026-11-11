@@ -1,6 +1,6 @@
 # MakePack Zig port - handoff
 
-`master` (2.0.0). The C# 1.x build is the behaviour spec, in git history only: `git show ce29887:legacy/<path>`
+`master` (2.1.0; the version lives only in build.zig.zon's `.version`, read via the `build_info` module). The C# 1.x build is the behaviour spec, in git history only: `git show ce29887:legacy/<path>`
 (Engine.cs, Program.cs incl. `--selftest`, Cli.cs, Assoc.cs, Settings.cs, Strings.cs, Shell.cs, forms,
 `legacy/shell/MakePackShell.cpp`); plus `tools/bugtest.ps1` (CLI + GUI black box), `docs/*.md`.
 Zig 0.17.1 (on PATH, `%LOCALAPPDATA%\Programs\zig\0.17.1`); read `../MakeKit/docs/ZIG-0.17-NOTES.md` first.
@@ -149,7 +149,12 @@ The full contract is the module doc + doc comments of those three files; the ess
   `Software\MakePackTest-<random>` that stands in for HKCU in every Assoc read/write: the `--register/--unregister/
   --addmenu` verbs via `cli.Env.hive`, the GUI via `ctx.hive`, Heal; main.zig `testHive`, older name
   `MAKEPACK_HIVE`), `MAKEKIT_AUTOMATION=1`, `MAKEKIT_DISPLAY=\\.\DISPLAY1`; click by `##id`; `ctx.raise()` does
-  nothing under automation.
+  nothing under automation. Every test script sets `MAKEKIT_NO_UPDATE=1`; only `tools/update-e2e.ps1` runs MakeUpdate
+  (fake GitHub on 127.0.0.1 via `MAKEKIT_UPDATE_API`, fake setup that writes a marker).
+- **Updates** (`src/ui/updates.zig`, MakeKit K11): `ctx.updates`; main.zig polls it per frame, `openMain` starts the
+  daily check (settings `UpdateCheck`/`LastUpdateCheck`/`UpdateSkip`), MainWindow draws the banner under the menu bar
+  and has Help > Check for updates (`###m_updates`); Settings has the toggle (`##settings_updates`). MakePack.exe has
+  no network imports; MakeUpdate.exe (kit artifact) is installed next to it.
 - Boot check (2026-11-10, automation): no args -> main window with `###mfile`..`###mhelp`; a second process forwards
   and exits 0, one process; `quit` exit 0; `x`, `--assoc`, `--settings` exit at once with the stub dialogs.
 

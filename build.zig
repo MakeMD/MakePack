@@ -1,5 +1,5 @@
 //! MakePack (Zig port; the C# 1.x original is in git history). docs/ZIG-PORT.md = package table.
-//!   zig build                  MakePack.exe + 7z.dll + 7z.sfx + MakePackShell.dll in zig-out/bin
+//!   zig build                  MakePack.exe + 7z.dll + 7z.sfx + MakePackShell.dll + MakeUpdate.exe in zig-out/bin
 //!   zig build test             every unit test (src/test_all.zig)
 //!   zig build test-base | test-sevenzip | test-engine | test-platform     one package's tests
 //!   zig build test-shell       MakePackShell.dll + shell/test harness (drives the DLL like Explorer)
@@ -17,9 +17,13 @@ pub fn build(b: *std.Build) void {
     paths.addOptionPathUntracked("seven_zip_dll", b.path("third_party/7zip/7z.dll"));
     paths.addOptionPathUntracked("seven_zip_sfx", b.path("third_party/7zip/7z.sfx"));
     paths.addOptionPathUntracked("seven_zip_exe", b.path("third_party/7zip/7z.exe"));
+    // The app's version for About and the update check: build.zig.zon's .version, the one place it is kept.
+    const build_info = b.addOptions();
+    build_info.addOption([]const u8, "version", @import("build.zig.zon").version);
     const imports: []const std.Build.Module.Import = &.{
         .{ .name = "kit", .module = kit },
         .{ .name = "paths", .module = paths.createModule() },
+        .{ .name = "build_info", .module = build_info.createModule() },
     };
 
     // ---- MakePack.exe (GUI subsystem; icon 1 + the kit manifest from app.rc)
@@ -30,6 +34,8 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
     b.installBinFile("third_party/7zip/7z.dll", "7z.dll");
     b.installBinFile("third_party/7zip/7z.sfx", "7z.sfx");
+    // MakeUpdate.exe (MakeKit K11): the only networked binary, run by Help > Check for updates and the daily check.
+    b.installArtifact(kit_dep.artifact("MakeUpdate"));
 
     const run = b.addRunArtifact(exe);
     run.step.dependOn(b.getInstallStep());

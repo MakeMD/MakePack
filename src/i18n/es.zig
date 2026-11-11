@@ -284,6 +284,17 @@ pub const t: en.Strings = .{
     .about = "Acerca de MakePack",
     .aboutText = "Un compresor basado en 7z.dll (7-Zip, LGPL).\nMakeMD",
 
+    // actualizaciones
+    .checkUpdates = "Buscar actualizaciones",
+    .updateCheckAuto = "Buscar actualizaciones automáticamente",
+    .updateAvailableFmt = "La versión {0} está disponible",
+    .updateNow = "Actualizar ahora",
+    .releaseNotes = "Notas de la versión",
+    .updateLater = "Más tarde",
+    .upToDateFmt = "MakePack {0} es la versión más reciente.",
+    .updateFailedFmt = "No se pudo comprobar si hay actualizaciones.\n\n{0}",
+    .updateBusy = "MakePack todavía está trabajando. Actualice cuando termine la operación en curso.",
+
     // main window: toolbar
     .tbAdd = "Agregar",
     .tbExtract = "Extraer en",

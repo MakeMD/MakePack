@@ -45,7 +45,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "win11menu"; Description: "{cm:TaskWin11Menu}"; Check: IsWin11
 
 [Files]
-; MakePack.exe, 7z.dll, 7z.sfx (tools\build.ps1 stages them from zig-out\bin; one exe, no runtime folder).
+; MakePack.exe, MakeUpdate.exe (the update helper, the only binary that goes online), 7z.dll, 7z.sfx
+; (tools\build.ps1 stages them from zig-out\bin; no runtime folder).
 Source: "..\dist\app\*"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\third_party\7zip\License.txt"; DestDir: "{app}"; DestName: "7-Zip-License.txt"; Flags: ignoreversion
@@ -71,6 +72,9 @@ Filename: "{app}\MakePack.exe"; Parameters: "--unregister"; Flags: runhidden wai
 
 [UninstallDelete]
 Type: files; Name: "{app}\MakePackShell.dll.old*"
+; MakeUpdate moves its running exe aside during an update; its log lives in %LOCALAPPDATA%\MakeUpdate.
+Type: files; Name: "{app}\MakeUpdate.exe.old"
+; {localappdata}\MakeUpdate is shared with MakeCleaner: removed in CurUninstallStepChanged only when MakeCleaner is gone.
 
 [CustomMessages]
 en.TaskContextMenu=Add "Add to archive" to the context menu
@@ -148,6 +152,11 @@ begin
     if Code <> 0 then Log('Windows 11 menu not registered; installation continues');
     Exit;
   end;
+  // An in-app update runs this setup /VERYSILENT: it never raises a UAC prompt by itself (no Win11 menu this time).
+  if WizardSilent then begin
+    Log('silent setup: skipping the UAC prompt for MakePack.cer; no Windows 11 menu');
+    Exit;
+  end;
   // Still untrusted - the one UAC prompt: trust MakePack.cer machine-wide. Declined = no Win11 menu, the classic verbs still work.
   // ponytail: the cert stays in TrustedPeople on uninstall - removing it would cost a second UAC prompt.
   if not ShellExec('runas', ExpandConstant('{sys}\certutil.exe'),
@@ -185,7 +194,14 @@ end;
 
 // ponytail: per-user registration - other accounts on the PC do not get the Win11 menu (Add-AppxProvisionedPackage if asked).
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  MakeCleanerKey: String;
 begin
+  // AppId in MakeCleaner\installer\MakeCleaner.iss
+  MakeCleanerKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{4F7A2C91-6B3E-4D58-A0E7-9C1D2B3F4E65}_is1';
   if CurUninstallStep = usUninstall then
     RemoveWin11Menu;
+  // %LOCALAPPDATA%\MakeUpdate (update.log) is shared by every app that ships MakeUpdate.
+  if (CurUninstallStep = usPostUninstall) and not RegKeyExists(HKCU, MakeCleanerKey) and not RegKeyExists(HKLM, MakeCleanerKey) then
+    DelTree(ExpandConstant('{localappdata}\MakeUpdate'), True, True, True);
 end;

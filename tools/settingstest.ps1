@@ -6,6 +6,7 @@
 # input), windows on \\.\DISPLAY<Screen>; kills only the processes it started.
 param([string]$Exe = "$PSScriptRoot\..\zig-out\bin\MakePack.exe", [string]$Shot = "", [ValidateRange(1, 9)][int]$Screen = 1)
 $ErrorActionPreference = 'Stop'
+$env:MAKEKIT_NO_UPDATE = '1'   # no update check from any test process (MakeKit K11)
 . (Join-Path $PSScriptRoot '..\..\MakeKit\tools\imgui-auto.ps1')
 
 $rand = [guid]::NewGuid().ToString('N').Substring(0, 8)

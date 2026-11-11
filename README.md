@@ -20,17 +20,29 @@
 - **Вигляд.** Ctrl+H — плаский список усіх файлів архіву; ще є режими «Список» і «Таблиця». Розмір вікна, дерево, режим і остання тека запам'ятовуються.
 - **Тема й іконки.** Темна тема Carbon Mint і набір іконок з MakeKit, іконки вбудовані в exe. PNG у теці `icons\` поруч з exe підміняє будь-яку з них без перезбирання; список — [docs/ICONS-NEEDED.md](docs/ICONS-NEEDED.md).
 
-Перевірки: `zig build test`, `MakePack.exe --selftest`, `tools\bugtest.ps1` (чорна скринька: CLI і вікна через автоматизацію MakeKit, у пісочниці — власні `MAKEPACK_INSTANCE`, `MAKEPACK_SETTINGS`, `MAKEPACK_REGROOT`, тека в `%TEMP%`; справжні мишу й клавіатуру не чіпає, вікна — на моніторі `-Screen`, типово 1), `tools\guismoke.ps1` (знімки головного вікна після натискань), `tools\shots.ps1` (знімки всіх вікон і діалогів для перевірки теми → `zig-out\shots`), `tools\settingstest.ps1` (збереження налаштувань). `tools\dragtest.ps1` рухає справжню мишу — лише вручну. `tools\uiadump.ps1` — UIA-дерево + скріншот будь-якого чужого вікна (ImGui-вікна MakePack UIA не бачить).
+## Оновлення
+
+Сам MakePack у мережу не ходить. Перевіряє й ставить оновлення окремий помічник `MakeUpdate.exe` з MakeKit, він лежить поруч з exe. Помічник звертається лише до GitHub API (`MakeMD/MakePack`, без авторизації й без жодних даних користувача).
+
+- **Раз на добу**, після відкриття головного вікна, у фоні. Вимикається в «Налаштуваннях» прапорцем «Автоматично перевіряти оновлення» (`settings.json`: `UpdateCheck`, час останньої спроби — `LastUpdateCheck`). Якщо мережі немає, нічого не показується.
+- **Довідка → Перевірити оновлення** перевіряє одразу й завжди відповідає: «найновіша версія», причина збою або банер.
+- **Банер** над тулбаром «Доступна версія X»: **Оновити зараз** (MakeUpdate завантажує `MakePack-Setup-X.exe`, звіряє SHA-256 із `SHA256SUMS.txt` релізу, чекає, поки MakePack закриється, ставить тихо `/VERYSILENT` без UAC і запускає MakePack знову), **Що нового** (сторінка релізу), **Пізніше** (ця версія більше не показується, `UpdateSkip`). Поки триває розпакування чи черга, оновлення не стартує.
+- Журнал помічника: `%LOCALAPPDATA%\MakeUpdate\update.log`. Змінна `MAKEKIT_NO_UPDATE=1` вимикає будь-яку перевірку (так роблять усі тести).
+
+Перевірки: `zig build test`, `MakePack.exe --selftest`, `tools\bugtest.ps1` (чорна скринька: CLI і вікна через автоматизацію MakeKit, у пісочниці — власні `MAKEPACK_INSTANCE`, `MAKEPACK_SETTINGS`, `MAKEPACK_REGROOT`, тека в `%TEMP%`; справжні мишу й клавіатуру не чіпає, вікна — на моніторі `-Screen`, типово 1), `tools\guismoke.ps1` (знімки головного вікна після натискань), `tools\shots.ps1` (знімки всіх вікон і діалогів для перевірки теми → `zig-out\shots`), `tools\settingstest.ps1` (збереження налаштувань), `tools\update-e2e.ps1` (справжні MakePack + MakeUpdate проти фейкового GitHub на 127.0.0.1 і фейкового інсталятора: банер, «Пізніше», «Оновити зараз», перезапуск, офлайн, `MAKEKIT_NO_UPDATE`). Усі тестові скрипти ставлять `MAKEKIT_NO_UPDATE=1`, у справжній GitHub жоден тест не ходить. `tools\dragtest.ps1` рухає справжню мишу — лише вручну. `tools\uiadump.ps1` — UIA-дерево + скріншот будь-якого чужого вікна (ImGui-вікна MakePack UIA не бачить).
 
 ## Збірка
 
 ```powershell
-tools\build.ps1                  # версія 2.0.0
-tools\build.ps1 -Version 1.2.3   # своя версія
+tools\build.ps1                  # версія з build.zig.zon (зараз 2.1.0); -Version має з нею збігатися
 tools\build.ps1 -NoSign          # пакет меню Windows 11 без підпису (суха збірка, такий пакет не встановиться)
+tools\publish.ps1                # підписана збірка + dist\SHA256SUMS.txt + готова команда gh release create (не виконує)
+tools\publish.ps1 -Publish       # те саме і публікує реліз vX.Y.Z на GitHub
 ```
 
-Потрібні Zig 0.17.1 у `%LOCALAPPDATA%\Programs\zig\0.17.1\`, сусідня тека `..\MakeKit` (`git clone https://github.com/MakeMD/MakeKit`), Inno Setup 6 і Windows SDK (`makeappx`, `signtool`; для підпису одноразово `tools\new_cert.ps1`). Кроки: `zig build -Doptimize=ReleaseSafe` → `dist\app` (MakePack.exe, 7z.dll, 7z.sfx) → `tools\build_shell.ps1` → `dist\shell` → ISCC. Результат: `dist\MakePack-Setup-<версія>.exe`.
+Версія задається в одному місці, `.version` у `build.zig.zon`: звідти її беруть exe (VERSIONINFO, «Про програму», перевірка оновлень), інсталятор і `publish.ps1`. Реліз для оновлення містить `MakePack-Setup-X.Y.Z.exe` і `SHA256SUMS.txt` (тег `vX.Y.Z`, не чернетка й не pre-release).
+
+Потрібні Zig 0.17.1 у `%LOCALAPPDATA%\Programs\zig\0.17.1\`, сусідня тека `..\MakeKit` (`git clone https://github.com/MakeMD/MakeKit`), Inno Setup 6 і Windows SDK (`makeappx`, `signtool`; для підпису одноразово `tools\new_cert.ps1`). Кроки: `zig build -Doptimize=ReleaseSafe` → `dist\app` (MakePack.exe, MakeUpdate.exe, 7z.dll, 7z.sfx) → `tools\build_shell.ps1` → `dist\shell` → ISCC. Результат: `dist\MakePack-Setup-<версія>.exe`.
 
 ## Контекстне меню та асоціації
 

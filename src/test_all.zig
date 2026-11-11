@@ -9,4 +9,5 @@ test {
     _ = @import("ui/dlg_run.zig");
     _ = @import("ui/dlg_viewer.zig");
     _ = @import("ui/mw_model.zig");
+    _ = @import("ui/updates.zig");
 }
