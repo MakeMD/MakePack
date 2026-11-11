@@ -16,16 +16,9 @@ $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\make
 if (-not $kit) { throw "Windows SDK (makeappx.exe) not found" }
 New-Item -ItemType Directory -Force $out | Out-Null
 
-# Package logos, rendered from the app icon once (committed; delete shell\package\Assets to redo).
+# Package logos are committed in shell\package\Assets (made by MakeKit\tools\app_icons.py with the app icon).
 $assets = Join-Path $shell 'package\Assets'
-if (-not (Test-Path (Join-Path $assets 'StoreLogo.png'))) {
-    New-Item -ItemType Directory -Force $assets | Out-Null
-    $py = "import sys; sys.path.insert(0, r'$root\icon'); from build_icon import render; " +
-          "f = render(r'$root\icon\makepack.svg', [150, 50, 44]); " +
-          "[f[s].save(rf'$assets\{n}.png') for s, n in [(150, 'Square150x150Logo'), (50, 'StoreLogo'), (44, 'Square44x44Logo')]]"
-    python -c $py
-    if ($LASTEXITCODE) { throw "logo render failed (exit $LASTEXITCODE)" }
-}
+if (-not (Test-Path (Join-Path $assets 'StoreLogo.png'))) { throw "missing $assets\StoreLogo.png (run MakeKit\tools\app_icons.py)" }
 
 # 1+2. DLL + harness: test-shell builds MakePackShell.dll, harness.exe and fake_makepack.exe and drives the DLL like
 # Explorer would (menu states + command lines against the fake MakePack.exe, in a throw-away HKCU key and temp

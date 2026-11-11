@@ -1,8 +1,9 @@
-# MakePack build: icon -> zig build (ReleaseSafe) -> Win11 shell extension -> Inno Setup. Pure ASCII (PS 5.1).
+# MakePack build: zig build (ReleaseSafe) -> Win11 shell extension -> Inno Setup. Pure ASCII (PS 5.1).
+# App icon: icon\makepack.ico, built by MakeKit\tools\app_icons.py (committed).
 # Output: dist\app (what the installer ships), dist\shell, dist\MakePack-Setup-<version>.exe.
 # -NoSign: the shell package stays unsigned (no PFX / .env needed; for a dry run - such a package does not install).
 # ponytail: no msbuild targets, no CI matrix, exe not signed (only the shell package is) - one script, native calls.
-param([string]$Version = "2.0.0", [switch]$SkipIcon, [switch]$NoSign)
+param([string]$Version = "2.0.0", [switch]$NoSign)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -10,22 +11,8 @@ Set-Location $root
 $zig = Join-Path $env:LOCALAPPDATA 'Programs\zig\0.17.1\zig.exe'
 if (-not (Test-Path $zig)) { throw "Zig 0.17.1 not found at $zig" }
 
-# 1. Icon (pipeline owned by someone else - a failure here is not fatal, the committed .ico still works).
-$iconScript = Join-Path $root 'icon\build_icon.py'
-if ((Test-Path $iconScript) -and (-not $SkipIcon)) {
-    Write-Host "[1/4] icon" -ForegroundColor Cyan
-    try {
-        python $iconScript
-        if ($LASTEXITCODE) { throw "python exited $LASTEXITCODE" }
-    } catch {
-        Write-Warning "icon build failed ($_); keeping existing icon\makepack.ico"
-    }
-} else {
-    Write-Host "[1/4] icon: skipped" -ForegroundColor DarkGray
-}
-
-# 2. MakePack.exe + 7z.dll + 7z.sfx, staged into dist\app (no .pdb; the shell DLL comes from step 3).
-Write-Host "[2/4] zig build -Doptimize=ReleaseSafe ($Version)" -ForegroundColor Cyan
+# 1. MakePack.exe + 7z.dll + 7z.sfx, staged into dist\app (no .pdb; the shell DLL comes from step 3).
+Write-Host "[1/3] zig build -Doptimize=ReleaseSafe ($Version)" -ForegroundColor Cyan
 & $zig build -Doptimize=ReleaseSafe
 if ($LASTEXITCODE) { throw "zig build failed (exit $LASTEXITCODE)" }
 $app = Join-Path $root 'dist\app'
@@ -33,12 +20,12 @@ if (Test-Path $app) { Remove-Item $app -Recurse -Force }
 New-Item -ItemType Directory -Force $app | Out-Null
 foreach ($f in 'MakePack.exe', '7z.dll', '7z.sfx') { Copy-Item (Join-Path $root "zig-out\bin\$f") $app }
 
-# 3. Win11 top-level context menu: DLL + sparse package into dist\shell (signing needs tools\new_cert.ps1 once).
-Write-Host "[3/4] shell extension" -ForegroundColor Cyan
+# 2. Win11 top-level context menu: DLL + sparse package into dist\shell (signing needs tools\new_cert.ps1 once).
+Write-Host "[2/3] shell extension" -ForegroundColor Cyan
 & (Join-Path $PSScriptRoot 'build_shell.ps1') -Version $Version -NoSign:$NoSign
 
-# 4. Compile the installer.
-Write-Host "[4/4] ISCC" -ForegroundColor Cyan
+# 3. Compile the installer.
+Write-Host "[3/3] ISCC" -ForegroundColor Cyan
 $iscc = @(
     (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
     (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')

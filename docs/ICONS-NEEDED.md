@@ -44,4 +44,4 @@
 | `drive.png` | диски в дереві й у списку адрес |
 
 Іконки оболонки Windows (`SHGetFileInfo`) свідомо не беремо: вони кольорові й випадають з палітри.
-Іконка застосунку вже є (`icon\makepack.svg`).
+Іконка застосунку — `icon\makepack.ico` (і логотипи пакета меню Win11 у `shell\package\Assets`), збирається `MakeKit\tools\app_icons.py` з рендеру в `MakeKit\icon-kit\app`.

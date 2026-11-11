@@ -27,7 +27,6 @@
 ```powershell
 tools\build.ps1                  # версія 2.0.0
 tools\build.ps1 -Version 1.2.3   # своя версія
-tools\build.ps1 -SkipIcon        # без перегенерації іконки
 tools\build.ps1 -NoSign          # пакет меню Windows 11 без підпису (суха збірка, такий пакет не встановиться)
 ```
 
