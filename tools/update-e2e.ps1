@@ -1,5 +1,5 @@
 # MakePack update end-to-end test: the REAL MakePack.exe + MakeUpdate.exe against a fake GitHub (python http.server on
-# 127.0.0.1, MAKEKIT_UPDATE_API) that offers v2.1.1, whose "setup" is MakeKit\tools\update-e2e-fake.zig (it only writes
+# 127.0.0.1, MAKEKIT_UPDATE_API) that offers v99.0.0, whose "setup" is MakeKit\tools\update-e2e-fake.zig (it only writes
 # a marker file). Never contacts GitHub, never runs a real installer, never touches the installed MakePack.
 # Sandbox: a copy of zig-out\bin in %TEMP%\makepack-test-upd-<random>, private MAKEPACK_INSTANCE, MAKEPACK_SETTINGS in
 # that folder, MAKEPACK_REGROOT=Software\MakePackTest-<random> (deleted), TEMP/LOCALAPPDATA inside the folder,
@@ -80,19 +80,19 @@ try {
     $current = [regex]::Match((Get-Content (Join-Path $root 'build.zig.zon') -Raw), '\.version\s*=\s*"([^"]+)"').Groups[1].Value
     Write-Host "MakePack $current ($Optimize) in $app"
 
-    # ---- fake GitHub: MakeMD/MakePack v2.1.1 (newer than any 2.1.0 build)
+    # ---- fake GitHub: MakeMD/MakePack v99.0.0 (newer than any real build)
     $l = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0); $l.Start(); $port = $l.LocalEndpoint.Port; $l.Stop()
     $base = "http://127.0.0.1:$port"
-    $setupName = 'MakePack-Setup-2.1.1.exe'
+    $setupName = 'MakePack-Setup-99.0.0.exe'
     Copy-Item "$work\fake.exe" "$srv\dl\$setupName"
     $hash = (Get-FileHash "$srv\dl\$setupName" -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Utf8 "$srv\dl\SHA256SUMS.txt" "$hash  $setupName`n"
-    $rel = '{"tag_name":"v2.1.1","html_url":"BASE/MakeMD/MakePack/releases/tag/v2.1.1","draft":false,"prerelease":false,"body":"Fixes","assets":[' +
+    $rel = '{"tag_name":"v99.0.0","html_url":"BASE/MakeMD/MakePack/releases/tag/v99.0.0","draft":false,"prerelease":false,"body":"Fixes","assets":[' +
         '{"name":"SETUP","browser_download_url":"BASE/dl/SETUP","size":SIZE},' +
         '{"name":"SHA256SUMS.txt","browser_download_url":"BASE/dl/SHA256SUMS.txt","size":90}]}'
     $rel = $rel.Replace('BASE', $base).Replace('SETUP', $setupName).Replace('SIZE', "$((Get-Item "$srv\dl\$setupName").Length)")
     Write-Utf8 "$srv\repos\MakeMD\MakePack\releases\latest" $rel
-    Write-Utf8 "$srv\repos\MakeMD\MakePack\releases\tags\v2.1.1" $rel
+    Write-Utf8 "$srv\repos\MakeMD\MakePack\releases\tags\v99.0.0" $rel
     $server = Start-Process -FilePath $python -ArgumentList @('-I', '-m', 'http.server', "$port", '--bind', '127.0.0.1', '--directory', $srv) `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput "$work\srv.out" -RedirectStandardError "$work\srv.err"
     $null = $own.Add($server)
@@ -137,13 +137,13 @@ try {
     Remove-Item -LiteralPath $cfg -ErrorAction SilentlyContinue
     $a = Start-MakePack
     $null = Wait-AutoItem $a 'Update now##updNow' 45000
-    Check ((Get-AutoText $a '##updText') -eq 'Version 2.1.1 is available') 'banner text'
+    Check ((Get-AutoText $a '##updText') -eq 'Version 99.0.0 is available') 'banner text'
     foreach ($b in @('What''s new##updNotes', 'Later##updLater')) { $null = Wait-AutoItem $a $b }
     if ($Shot) { $null = Save-AutoScreenshot $a $Shot -Png; Write-Host "  screenshot: $Shot" }
     Invoke-AutoClick $a 'Later##updLater'
     $null = Invoke-AutoFrames $a 3
     Check (-not (Has-Banner $a)) 'Later hides the banner'
-    Check ((Get-Settings).UpdateSkip -eq '2.1.1') 'UpdateSkip = 2.1.1 saved'
+    Check ((Get-Settings).UpdateSkip -eq '99.0.0') 'UpdateSkip = 99.0.0 saved'
     Write-Host 'Help > Check for updates (also offers a skipped version):'
     Invoke-AutoClick $a '###mhelp'
     $null = Invoke-AutoFrames $a 2
@@ -159,7 +159,7 @@ try {
     $a = Start-MakePack
     Check (Wait-Until { (Get-LastCheck) -gt 0 } 45000) 'the daily check ran'
     $null = Invoke-AutoFrames $a 3
-    Check (-not (Has-Banner $a)) 'no banner for the skipped 2.1.1'
+    Check (-not (Has-Banner $a)) 'no banner for the skipped 99.0.0'
     $null = Stop-AutoApp $a
 
     Write-Host 'Update now:'
@@ -190,7 +190,7 @@ try {
     $ok = $true
 } finally {
     foreach ($p in $own) { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } }
-    foreach ($n in 'MakePack.exe', 'MakeUpdate.exe', 'MakePack-Setup-2.1.1.exe') { foreach ($p in @(Get-Ours $n)) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } }
+    foreach ($n in 'MakePack.exe', 'MakeUpdate.exe', 'MakePack-Setup-99.0.0.exe') { foreach ($p in @(Get-Ours $n)) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } }
     foreach ($k in @($savedEnv.Keys)) { [Environment]::SetEnvironmentVariable($k, $savedEnv[$k]) }
     Remove-Item -LiteralPath "HKCU:\$reg" -Recurse -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
