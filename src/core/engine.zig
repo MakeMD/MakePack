@@ -86,7 +86,7 @@ pub const Error = error{
     PasswordInArgs,
     /// ArgumentException(S.CliNoPasswordFmt) - 7 - diag: format name
     NoPasswordForFormat,
-    /// ArgumentException from Apply/Compress ("method X is not valid for Zip", SFX/ZipCrypto/volume checks) - 7 - diag
+    /// ArgumentException from Apply/Compress (a method/option the format lacks, SFX/ZipCrypto/volume checks) - 7 - diag: S.notSupported
     InvalidOption,
     /// FileNotFound/DirectoryNotFoundException - 10 - diag: S.fileNotFoundFmt / S.cliNoMatchFmt
     FileNotFound,
@@ -167,8 +167,8 @@ pub fn friendly(err: anyerror, diag: ?*const Diag) []const u8 {
         error.ArchiveFailed, error.OperationFailed => S.tr().operationFailed,
         else => {
             if (winCode(err)) |code| if (sysMessage(&friendly_buf, code)) |m| return m;
-            // ponytail: an error std names but Windows has no code for: "operation failed: <name>"
-            return S.fillZ(&friendly_buf, S.tr().labelValueFmt, .{ S.tr().operationFailed, @errorName(err) });
+            // ponytail: an error std names but Windows has no code for: just "The operation failed", never the Zig name
+            return S.tr().operationFailed;
         },
     };
 }
@@ -186,11 +186,11 @@ fn winCode(err: anyerror) ?u32 {
 
 const sysMessage = kit.win.sysMessage;
 
-/// "operation failed: <Windows' text for the last 7z.dll HRESULT>" into the Diag.
+/// "The operation failed: <Windows' text for the last 7z.dll HRESULT>" into the Diag, or just "The operation failed".
 fn failText(diag: ?*Diag) void {
     const hr: u32 = @bitCast(sevenzip.last_hr);
     var tbuf: [1536]u8 = undefined;
-    const msg: []const u8 = sysMessage(&tbuf, hr) orelse (std.mem.print(&tbuf, "0x{X:0>8}", .{hr}) catch "");
+    const msg = sysMessage(&tbuf, hr) orelse return Diag.set(diag, S.tr().operationFailed, .{}); // never a raw HRESULT
     var fmt: [128]u8 = undefined;
     Diag.set(diag, S.fillZ(&fmt, S.tr().labelValueFmt, .{ S.tr().operationFailed, "{0}" }), .{msg});
 }
@@ -1775,20 +1775,11 @@ fn applyProps(ar: Allocator, format: OutFormat, o: CompressOptions, encrypting: 
     const known = for (if (k) |kk| methodsFor(kk) else &.{}) |m| {
         if (m == o.method) break true;
     } else false;
-    const what: ?[]const u8 = if (!(o.method == .Default or known))
-        try ar.print("method {t}", .{o.method})
-    else if (!(o.dictionary == 0 or hasDictionary(format, o.method)))
-        "a dictionary size"
-    else if (!(o.solid == null or seven))
-        "solid"
-    else if (!(o.filter == null or seven))
-        "an exe filter"
-    else if (!(o.threads == 0 or k != null))
-        "a thread count"
-    else
-        null;
-    if (what) |wh| {
-        Diag.set(diag, "{0} is not valid for {1}", .{ wh, @tagName(format) });
+    // The dialog never offers these: a method, dictionary, solid, exe filter or thread count the format lacks.
+    if (!(o.method == .Default or known) or !(o.dictionary == 0 or hasDictionary(format, o.method)) or
+        !(o.solid == null or seven) or !(o.filter == null or seven) or !(o.threads == 0 or k != null))
+    {
+        Diag.set(diag, S.tr().notSupported, .{});
         return error.InvalidOption;
     }
     if (o.method != .Default) try props.append(ar, .{ .name = "m", .value = methodName(o.method) });
@@ -1927,16 +1918,16 @@ pub fn compress(gpa: Allocator, io: Io, inputs: []const []const u8, out_path: []
         return error.DictionaryTooBig;
     }
     if (o.volume_size < 0) {
-        Diag.set(diag, "negative volume size", .{});
+        Diag.set(diag, S.tr().notSupported, .{}); // the dialog never offers this
         return error.InvalidOption;
     }
     // ponytail: 7z only and no volumes - a split SFX needs a stub that reads .002..., 7z.sfx does not.
     if (o.sfx and (k != .SevenZip or o.volume_size > 0)) {
-        Diag.set(diag, "SFX is 7z-only and single-file", .{});
+        Diag.set(diag, S.tr().notSupported, .{}); // the dialog never offers this
         return error.InvalidOption;
     }
     if (o.zip_crypto and k != .Zip) {
-        Diag.set(diag, "ZipCrypto is zip-only", .{});
+        Diag.set(diag, S.tr().notSupported, .{}); // the dialog never offers this
         return error.InvalidOption;
     }
     if (o.delete_sources) for (inputs) |i| if (inside(out_path, i)) return error.ArchiveInsideSources; // recycling the folder would take the archive along
@@ -2290,7 +2281,7 @@ pub fn recycle(gpa: Allocator, paths: []const []const u8, undo: bool, diag: ?*Di
     op.fFlags = @intCast(base | (if (undo) w.FOF_ALLOWUNDO | w.FOF_WANTNUKEWARNING else 0));
     const rc = w.SHFileOperationW(&op);
     if (rc != 0 or op.fAnyOperationsAborted != 0) {
-        Diag.set(diag, S.tr().recycleFailedFmt, .{rc});
+        Diag.set(diag, S.tr().recycleFailedFmt, .{});
         return error.RecycleFailed;
     }
 }
@@ -2366,7 +2357,7 @@ test "exit codes and messages (the error contract)" {
     var d: Diag = .{};
     try testing.expect(d.text() == null);
     Diag.set(&d, kit.i18n.pick(S.tr().unsafeSkippedN, 3), .{3});
-    try testing.expectEqualStrings("3 entries with unsafe paths were skipped (path traversal attempt).", friendly(error.UnsafeEntriesSkipped, &d));
+    try testing.expectEqualStrings("3 files were skipped because they would be written outside the destination folder.", friendly(error.UnsafeEntriesSkipped, &d));
     Diag.set(null, "ignored", .{});
     try testing.expectEqual(OverwriteMode.Overwrite, Conflict.always_overwrite.ask(null, "x").?);
     try testing.expect(!Progress.none.cancelled());

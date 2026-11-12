@@ -30,8 +30,7 @@ pub const CompressionLevel = enum(u8) { None, Fast, Low, Normal, High, Ultra };
 /// this code base is .Default (the format's own method), exactly as the C# initializers were.
 pub const CompressionMethod = enum(u8) { Copy, Deflate, Deflate64, BZip2, Lzma, Lzma2, Ppmd, Default };
 
-/// What 7z.dll writes (SevenZipSharp's OutArchiveFormat). Spelled like C# because Engine.Apply's
-/// "... is not valid for {format}" message prints it.
+/// What 7z.dll writes (SevenZipSharp's OutArchiveFormat), spelled like C#.
 pub const OutFormat = enum { SevenZip, Zip, GZip, BZip2, Wim, Tar, XZ };
 
 // ---- the archive kinds we create --------------------------------------------------------------------

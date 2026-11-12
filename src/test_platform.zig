@@ -799,7 +799,7 @@ test "cli: exit codes and messages decided before the engine runs" {
     try testing.expectEqual(@as(usize, 2), ask_count);
     var pv2 = try PasswordVar.set("Secret");
     defer pv2.restore();
-    try expectRun(7, &.{ "a", "-p", "-ttar", out, src }, neverAsk, "The tar format cannot take a password.");
+    try expectRun(7, &.{ "a", "-p", "-ttar", out, src }, neverAsk, "The tar format does not support passwords.");
     try expectRun(7, &.{ "a", "-hp", "-tzip", out, src }, neverAsk, "MAKEPACK_PASSWORD");
     try testing.expect(!pw.fileExists(out));
 }
@@ -1075,7 +1075,7 @@ test "cli end to end: a / t / l / x -y with 7z.exe as the oracle" {
     const enc = at(a, tmp.path, "enc.7z");
     const r7 = try std.process.run(a, io, .{ .argv = &.{ paths.seven_zip_exe, "a", "-t7z", "-pSecret", "-mhe=on", enc, src, "-bso0", "-bsp0" } });
     try testing.expect(r7.term == .exited and r7.term.exited == 0);
-    try expectRun(11, &.{ "t", enc }, neverAsk, "MAKEPACK_PASSWORD");
+    try expectRun(11, &.{ "t", enc }, neverAsk, "Add -p to enter it.");
     var pv2 = try PasswordVar.set("WrongPass");
     defer pv2.restore();
     try expectRun(11, &.{ "t", enc }, neverAsk, "Wrong password");

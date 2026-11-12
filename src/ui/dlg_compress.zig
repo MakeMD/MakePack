@@ -582,7 +582,7 @@ pub const Compress = struct {
         D.sameLineAt(left + 8);
         im.ImGui_BeginDisabled(f.currentKind() != .SevenZip);
         const sfx_before = f.sfx;
-        _ = D.checkbox("SFX (.exe)", "compress_sfx", &f.sfx);
+        _ = D.checkbox(S.tr().sfx, "compress_sfx", &f.sfx);
         D.tooltip(S.tr().sfxTip);
         im.ImGui_EndDisabled();
         if (sfx_before != f.sfx) f.updateOut(d);
@@ -665,21 +665,25 @@ pub const Compress = struct {
         im.ImGui_BeginDisabled(!f.dictOn());
         D.caption(S.tr().dictionary, cap2);
         _ = D.combo("compress_dictionary", &f.dict_names, &f.dict, 150);
+        D.tooltip(S.tr().dictionaryTip);
         im.ImGui_EndDisabled();
 
         im.ImGui_BeginDisabled(!f.solidOn());
         D.caption(S.tr().solidBlock, cap);
         _ = D.combo("compress_solid", &f.solid_names, &f.solid, 110);
+        D.tooltip(S.tr().solidTip);
         im.ImGui_EndDisabled();
         D.sameLineAt(cap + 128);
         im.ImGui_BeginDisabled(!f.advOn());
         D.caption(S.tr().threads, cap2);
         _ = D.combo("compress_threads", f.thread_names, &f.threads, 150);
+        D.tooltip(S.tr().threadsTip);
         im.ImGui_EndDisabled();
 
         im.ImGui_BeginDisabled(!f.solidOn());
         D.caption(S.tr().exeFilter, cap);
         _ = D.combo("compress_filter", &f.filter_names, &f.filter, 110);
+        D.tooltip(S.tr().exeFilterTip);
         im.ImGui_EndDisabled();
     }
 
@@ -692,7 +696,7 @@ pub const Compress = struct {
         const e = f.ext();
         var sb: [32]u8 = undefined;
         const spec = std.mem.print(&sb, "*{s}", .{e}) catch "*.*";
-        const name = if (f.sfxOn()) "SFX" else f.info().name;
+        const name = if (f.sfxOn()) S.tr().sfx else f.info().name;
         const got = (kit.win.saveFile(f.gpa, D.owner(d), .{
             .file_name = fspath.basename(cur),
             .folder = fspath.dirname(cur),

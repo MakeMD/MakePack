@@ -5,7 +5,7 @@
 //!            offline / any failure stays quiet; a newer version except UpdateSkip -> the banner.
 //!   manual:  always checks; answers with an alert (latest / failed) or the banner (also for a skipped version).
 //!   banner:  Update now = MakeUpdate install (waits for this PID, silent setup, starts MakePack again) + quit;
-//!            Release notes = the release page; Later = UpdateSkip = that version.
+//!            What's new = the release page; Later = UpdateSkip = that version.
 const std = @import("std");
 const kit = @import("kit");
 const build_info = @import("build_info");
@@ -50,8 +50,8 @@ pub const Updates = struct {
 
     fn start(u: *Updates, ctx: *C.Ctx, manual: bool) void {
         u.manual = manual;
-        if (u.updater == null) u.updater = kit.update.updaterPath(ctx.gpa, ctx.io) catch |e| return if (manual) failed(ctx, @errorName(e));
-        u.checker.start(ctx.gpa, ctx.io, u.updater.?, repo, version) catch |e| if (manual) failed(ctx, @errorName(e));
+        if (u.updater == null) u.updater = kit.update.updaterPath(ctx.gpa, ctx.io) catch return if (manual) failed(ctx, "");
+        u.checker.start(ctx.gpa, ctx.io, u.updater.?, repo, version) catch if (manual) failed(ctx, "");
     }
 
     /// Every frame (main.zig): takes a finished check.
@@ -62,11 +62,11 @@ pub const Updates = struct {
         const s = settings.current();
         s.LastUpdateCheck = now(ctx); // after every attempt: offline is retried tomorrow, not on every start
         settings.commit();
-        var r = res catch |e| return if (manual) failed(ctx, @errorName(e));
+        var r = res catch return if (manual) failed(ctx, "");
         if (!r.value.ok or !r.value.newer or (!manual and std.mem.eql(u8, r.value.latest, s.UpdateSkip))) {
             if (manual) {
                 var buf: [512]u8 = undefined;
-                if (!r.value.ok) failed(ctx, r.value.@"error") else ctx.dialogs.alert(.info, S.tr().checkUpdates, S.fillZ(&buf, S.tr().upToDateFmt, .{version}));
+                if (!r.value.ok) failed(ctx, r.value.reason) else ctx.dialogs.alert(.info, S.tr().checkUpdates, S.fillZ(&buf, S.tr().upToDateFmt, .{version}));
             }
             return r.deinit();
         }
@@ -103,7 +103,7 @@ pub const Updates = struct {
         if (ctx.dialogs.busy()) return ctx.dialogs.alert(.info, S.app, S.tr().updateBusy);
         const self = pw.exePath(ctx.gpa) catch return;
         defer ctx.gpa.free(self);
-        kit.update.install(ctx.io, u.updater.?, repo, r.tag, self) catch |e| return failed(ctx, @errorName(e));
+        kit.update.install(ctx.io, u.updater.?, repo, r.tag, self) catch return ctx.dialogs.alert(.warning, S.app, S.tr().updateInstallFailed);
         ctx.app.quit(); // MakeUpdate waits for this PID, runs the setup silently and starts MakePack again
     }
 
@@ -117,8 +117,11 @@ pub const Updates = struct {
     }
 };
 
-fn failed(ctx: *C.Ctx, why: []const u8) void {
+/// `reason` = MakeUpdate's failure kind ("offline", "failed"...; "" = it did not run): our own words for it,
+/// never its English `error` or `detail`.
+fn failed(ctx: *C.Ctx, reason: []const u8) void {
     var buf: [1024]u8 = undefined;
+    const why = if (std.mem.eql(u8, reason, "offline")) S.tr().updateOffline else S.tr().updateTryLater;
     ctx.dialogs.alert(.warning, S.tr().checkUpdates, S.fillZ(&buf, S.tr().updateFailedFmt, .{why}));
 }
 

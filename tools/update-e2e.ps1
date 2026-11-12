@@ -138,7 +138,7 @@ try {
     $a = Start-MakePack
     $null = Wait-AutoItem $a 'Update now##updNow' 45000
     Check ((Get-AutoText $a '##updText') -eq 'Version 2.1.1 is available') 'banner text'
-    foreach ($b in @('Release notes##updNotes', 'Later##updLater')) { $null = Wait-AutoItem $a $b }
+    foreach ($b in @('What''s new##updNotes', 'Later##updLater')) { $null = Wait-AutoItem $a $b }
     if ($Shot) { $null = Save-AutoScreenshot $a $Shot -Png; Write-Host "  screenshot: $Shot" }
     Invoke-AutoClick $a 'Later##updLater'
     $null = Invoke-AutoFrames $a 3

@@ -105,7 +105,6 @@ pub const Form = struct {
 
         D.caption(S.tr().update, cap);
         _ = D.combo("extract_update", &updates, &f.update, cw);
-        D.tooltip(S.tr().updateTip);
         D.sameLineAt(col2);
         _ = D.checkbox(S.tr().keepBroken, "extract_keep_broken", &f.keep_broken);
 

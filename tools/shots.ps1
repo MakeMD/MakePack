@@ -85,6 +85,8 @@ try {
     Tool 'find'; Shot 'find'; Esc
     Invoke-AutoKey $app 'ctrl+S'; $null = Invoke-AutoFrames $app 3; Shot 'settings'; Esc
     Invoke-AutoClick $app '###moptions'; Invoke-AutoClick $app '###m_assoc'; Shot 'assoc'; Esc
+    Invoke-AutoClick $app '###mhelp'; Invoke-AutoClick $app '###m_about'; Shot 'about'; Esc
+    Tool 'delete'; Shot 'confirm'; Esc
 
     Go "$tmp\locked.7z"
     $null = Wait-AutoItem $app 'readme.txt###r' 10000
